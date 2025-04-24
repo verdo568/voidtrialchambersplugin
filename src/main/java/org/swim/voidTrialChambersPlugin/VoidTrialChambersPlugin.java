@@ -20,6 +20,9 @@ import org.bukkit.scheduler.BukkitRunnable;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.File;
+import java.io.IOException;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 
 public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
@@ -30,13 +33,14 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
     private final Map<UUID, Location> originalLocations = new HashMap<>();
     // 排除處理的世界名單
     private List<String> excludedWorldNames;
+    // 試煉世界冷卻時間
+    private final Map<UUID, Long> trialCooldowns = new HashMap<>();
 
     @Override
     public void onEnable() {
         Bukkit.getPluginManager().registerEvents(this, this);
         saveDefaultConfig();
         reloadConfig();
-        // 讀取 excluded_worlds
         excludedWorldNames = getConfig().getStringList("excluded_worlds");
 
         if (getCommand("trialchambers") != null) {
@@ -55,27 +59,43 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
 
     @Override
     public void onDisable() {
-        // 停用時刪除所有尚未刪除的試煉世界
         for (World w : new ArrayList<>(playerTrialWorlds.values())) {
             deleteWorld(w);
         }
         getLogger().info("Void Trial Chambers Plugin 已停用");
     }
 
-    /**
-     * 建立一個只屬於玩家的試煉世界
-     */
+    // 建立個人試煉世界並確保 data 資料夾及空檔案存在
     private World createPersonalTrialWorld(UUID uuid) {
-        String worldName = "trial_" + uuid;
-        WorldCreator wc = new WorldCreator(worldName);
-        wc.environment(Environment.NORMAL)
-                .generator(new VoidChunkGenerator());
-        World world = wc.createWorld();
+        String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
+        String worldName = "trial_" + uuid + "_" + timestamp;
+        World world = new WorldCreator(worldName)
+                .environment(Environment.NORMAL)
+                .generator(new VoidChunkGenerator())
+                .createWorld();
         if (world != null) {
+            // 確保 data 資料夾存在，避免卸載時 NoSuchFileException
+            File dataDir = new File(world.getWorldFolder(), "data");
+            if (!dataDir.exists() && !dataDir.mkdirs()) {
+                getLogger().warning("無法創建資料夾: " + dataDir.getAbsolutePath());
+            }
+
+            // 預先建立空的 raids.dat，避免寫入時因檔案不存在而報錯
+            File raidsFile = new File(dataDir, "raids.dat");
+            if (!raidsFile.exists()) {
+                try (java.io.FileOutputStream fos = new java.io.FileOutputStream(raidsFile)) {
+                    // 創建空文件並寫入
+                    fos.write(new byte[0]);
+                    fos.flush();
+                } catch (IOException e) {
+                    getLogger().warning("無法創建 raids.dat 文件: " + e.getMessage());
+                }
+            }
+
             world.setGameRule(GameRule.KEEP_INVENTORY, true);
             world.setSpawnLocation(0, 64, 0);
             createSpawnPlatform(world);
-            getLogger().info("Created personal trial world: " + worldName);
+            getLogger().info("Created personal trial world with data folder: " + worldName);
         }
         return world;
     }
@@ -91,23 +111,40 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         }
     }
 
-    /**
-     * 刪除世界：卸載後延遲遞迴刪除檔案
-     */
     private void deleteWorld(World world) {
         if (world == null) return;
         String name = world.getName();
         File folder = world.getWorldFolder();
         Bukkit.unloadWorld(world, false);
-        new BukkitRunnable() {
-            @Override
-            public void run() {
-                deleteFolderRecursively(folder);
-                getLogger().info("Deleted trial world: " + name);
+        if (isEnabled()) {
+            // 插件仍啟用：延遲排程刪除
+            new BukkitRunnable() {
+                @Override
+                public void run() {
+                    deleteFolderRecursively(folder);
+                    getLogger().info("Deleted trial world: " + name);
+                }
+            }.runTaskLater(VoidTrialChambersPlugin.this, 40L);
+        } else {
+            // 插件已停用：標記在 JVM 結束時刪除，避免影響伺服器關機時資料寫入
+            markFolderDeleteOnExit(folder);
+            getLogger().info("Marked trial world for deletion on exit: " + name);
+        }
+    }
+    // 遞迴標記檔案或資料夾於 JVM 結束時刪除
+    private void markFolderDeleteOnExit(File file) {
+        if (file.isDirectory()) {
+            File[] children = file.listFiles();
+            if (children != null) {
+                for (File child : children) {
+                    markFolderDeleteOnExit(child);
+                }
             }
-        }.runTaskLater(this, 40L);
+        }
+        file.deleteOnExit();
     }
 
+    // 遞迴同步刪除檔案或資料夾
     private void deleteFolderRecursively(File file) {
         if (file.isDirectory()) {
             for (File child : Objects.requireNonNull(file.listFiles())) {
@@ -118,18 +155,38 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
     }
 
     /**
-     * /trialchambers 指令處理
+     * /trialchambers 指令處理，重複執行前先刪除舊世界
      */
     private class TrialChambersCommand implements CommandExecutor {
+        private static final long COOLDOWN_MS = 30_000L;
+
         @Override
         public boolean onCommand(@NotNull CommandSender sender, @NotNull Command cmd,
                                  @NotNull String label, @NotNull String[] args) {
             if (!(sender instanceof Player player)) {
                 return true;
             }
-            player.sendMessage("§6正在進入試煉世界，請稍候...");
             UUID uid = player.getUniqueId();
+            long now = System.currentTimeMillis();
+            long last = trialCooldowns.getOrDefault(uid, 0L);
+            long elapsed = now - last;
+
+            if (elapsed < COOLDOWN_MS) {
+                long secondsLeft = (COOLDOWN_MS - elapsed + 999) / 1000;
+                player.sendMessage("§c請稍等 " + secondsLeft + " 秒，再使用 /trialchambers");
+                return true;
+            }
+
+            // 刪除舊試煉世界
+            World oldWorld = playerTrialWorlds.remove(uid);
+            if (oldWorld != null) {
+                deleteWorld(oldWorld);
+            }
+
+            trialCooldowns.put(uid, now);
+            player.sendMessage("§6正在進入試煉世界，請稍候...");
             originalLocations.put(uid, player.getLocation());
+
             World personal = createPersonalTrialWorld(uid);
             if (personal == null) {
                 player.sendMessage("§c無法建立試煉世界，請稍後再試");
@@ -142,8 +199,8 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             Random rnd = new Random();
             int x = rnd.nextInt(range * 2 + 1) - range;
             int z = rnd.nextInt(range * 2 + 1) - range;
-
             Location center = new Location(personal, x + 0.5, y + 5, z + 0.5);
+
             player.teleport(center);
             applyTrialEffects(player);
 
@@ -180,6 +237,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
                     PotionEffectType.SLOWNESS, PotionEffectType.MINING_FATIGUE)) {
                 p.removePotionEffect(type);
             }
+            p.addPotionEffect(new org.bukkit.potion.PotionEffect(PotionEffectType.NIGHT_VISION, 100, 0));
         }
 
         private void teleportToNearestBedOrOrigin(Player p, World world) {
@@ -219,9 +277,6 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         }
     }
 
-    /**
-     * 斷線事件：離開時刪除個人世界
-     */
     @EventHandler
     public void onPlayerQuit(PlayerQuitEvent evt) {
         UUID uid = evt.getPlayer().getUniqueId();
@@ -229,9 +284,6 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         deleteWorld(w);
     }
 
-    /**
-     * /exittrial 指令
-     */
     private class ExitTrialCommand implements CommandExecutor {
         @Override
         public boolean onCommand(@NotNull CommandSender sender, @NotNull Command cmd,
@@ -239,12 +291,10 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             if (!(sender instanceof Player p)) {
                 return true;
             }
-            // 排除世界不處理
             String currentWorld = p.getWorld().getName();
             if (excludedWorldNames.contains(currentWorld)) {
                 return true;
             }
-            // 清除效果與回到主世界
             World main = Bukkit.getWorld("world");
             if (main != null) {
                 for (PotionEffectType type : Arrays.asList(
@@ -263,18 +313,13 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         }
     }
 
-    /**
-     * 重生事件：若在排除世界，不進行任何處理
-     */
     @EventHandler
     public void onPlayerRespawn(PlayerRespawnEvent evt) {
         Player p = evt.getPlayer();
         String worldName = p.getWorld().getName();
-        // 如果是在排除列表，跳過所有處理
         if (excludedWorldNames.contains(worldName)) {
             return;
         }
-        // 否則送回主世界重生點
         World main = Bukkit.getWorld("world");
         if (main != null) {
             evt.setRespawnLocation(main.getSpawnLocation());
