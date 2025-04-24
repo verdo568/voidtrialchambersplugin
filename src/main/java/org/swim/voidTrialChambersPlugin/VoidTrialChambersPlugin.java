@@ -12,6 +12,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
+import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.generator.ChunkGenerator;
 import org.bukkit.generator.WorldInfo;
@@ -67,7 +68,20 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         getLogger().info("Void Trial Chambers Plugin 已啟用");
 
     }
-
+    @EventHandler
+    public void onPlayerCommand(PlayerCommandPreprocessEvent evt) {
+        Player p = evt.getPlayer();
+        // 檢查是不是在 trialWorld，且不是 OP
+        if (p.getWorld().equals(trialWorld) && !p.isOp()) {
+            String msg = evt.getMessage().toLowerCase();
+            // 簡單比對指令開頭
+            if (msg.startsWith("/tp ") || msg.equals("/tp") ||
+                    msg.startsWith("/teleport ") || msg.equals("/teleport")) {
+                evt.setCancelled(true);
+                p.sendMessage("§c此地禁止使用 /tp 指令！");
+            }
+        }
+    }
     @Override
     public void onDisable() {
         // 停用時將清單寫回 config
@@ -126,7 +140,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         public boolean onCommand(@NotNull CommandSender sender,
                                  @NotNull Command cmd,
                                  @NotNull String label,
-                                 @NotNull String[] args) {
+                                 @NotNull String @NotNull [] args) {
             if (!(sender instanceof Player p)) {
                 sender.sendMessage("§c只有玩家可以使用此指令！");
                 return true;
