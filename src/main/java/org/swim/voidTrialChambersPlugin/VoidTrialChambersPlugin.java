@@ -17,6 +17,8 @@ import org.bukkit.generator.ChunkGenerator;
 import org.bukkit.generator.WorldInfo;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.potion.PotionEffectType;
+import org.bukkit.scheduler.BukkitRunnable;
+import org.bukkit.util.BlockVector;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.*;
@@ -26,12 +28,30 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
     private World trialWorld;
     private final Map<UUID, Location> originalLocations = new HashMap<>();
     private final Map<UUID, Location> deathLocations = new HashMap<>();
+    private final List<BlockVector> placedChambers = new ArrayList<>();
+    private static final int MIN_DISTANCE = 300;
+    private static final int MIN_DIST_SQ = MIN_DISTANCE * MIN_DISTANCE;
 
     @Override
     public void onEnable() {
         Bukkit.getPluginManager().registerEvents(this, this);
         saveDefaultConfig();
         reloadConfig();
+
+        // 讀取已放置結構的清單
+        List<String> coords = getConfig().getStringList("trial_chambers.placed");
+        for (String s : coords) {
+            String[] parts = s.split(",");
+            if (parts.length == 3) {
+                try {
+                    int x = Integer.parseInt(parts[0]);
+                    int y = Integer.parseInt(parts[1]);
+                    int z = Integer.parseInt(parts[2]);
+                    placedChambers.add(new BlockVector(x, y, z));
+                } catch (NumberFormatException ignored) {}
+            }
+        }
+
         if (getCommand("trialchambers") != null) {
             Objects.requireNonNull(getCommand("trialchambers")).setExecutor(new TrialChambersCommand());
         } else {
@@ -43,6 +63,14 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
 
     @Override
     public void onDisable() {
+        // 停用時將清單寫回 config
+        List<String> coords = new ArrayList<>();
+        for (BlockVector vec : placedChambers) {
+            coords.add(vec.getBlockX() + "," + vec.getBlockY() + "," + vec.getBlockZ());
+        }
+        getConfig().set("trial_chambers.placed", coords);
+        saveConfig();
+        getLogger().info("Saved " + coords.size() + " trial chamber locations.");
         getLogger().info("Void Trial Chambers Plugin 已停用");
     }
 
@@ -91,88 +119,120 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             Location orig = originalLocations.remove(id);
             deathLocations.remove(id);
             if (orig != null) {
-                Bukkit.getScheduler().runTaskLater(this, () -> {
-                    p.teleport(orig);
-                    p.sendMessage("§6你已返回原本世界位置！");
-                }, 5L);
+                new BukkitRunnable() {
+                    @Override
+                    public void run() {
+                        p.teleport(orig);
+                        p.sendMessage("§6你已返回原本世界位置！");
+                    }
+                }.runTaskLater(this, 5L);
             }
         }
     }
-    /**
-     * 免疫虛空傷害：當玩家擁有失明效果（試煉倒數期間）時，取消來自虛空的傷害
-     */
+
     @EventHandler
     public void onEntityDamage(EntityDamageEvent event) {
-        if (!(event.getEntity() instanceof Player)) {
-            return;
-        }
-        Player p = (Player) event.getEntity();
+        if (!(event.getEntity() instanceof Player p)) return;
         if (event.getCause() == EntityDamageEvent.DamageCause.VOID
                 && p.hasPotionEffect(PotionEffectType.BLINDNESS)
                 && p.getWorld().equals(trialWorld)) {
             event.setCancelled(true);
         }
     }
+
     @Override
     public ChunkGenerator getDefaultWorldGenerator(@NotNull String worldName, String id) {
         return new VoidChunkGenerator();
     }
 
     public static class VoidChunkGenerator extends ChunkGenerator {
-        @Override public void generateNoise(@NotNull WorldInfo info, @NotNull Random rand, int chunkX, int chunkZ, @NotNull ChunkData data) {}
-        @Override public void generateSurface(@NotNull WorldInfo info, @NotNull Random rand, int chunkX, int chunkZ, @NotNull ChunkData data) {}
-        @Override public void generateCaves(@NotNull WorldInfo info, @NotNull Random rand, int chunkX, int chunkZ, @NotNull ChunkData data) {}
+        @Override public void generateNoise(@NotNull WorldInfo info,@NotNull Random rand,int chunkX,int chunkZ,@NotNull ChunkData data) {}
+        @Override public void generateSurface(@NotNull WorldInfo info,@NotNull Random rand,int chunkX,int chunkZ,@NotNull ChunkData data) {}
+        @Override public void generateCaves(@NotNull WorldInfo info,@NotNull Random rand,int chunkX,int chunkZ,@NotNull ChunkData data) {}
     }
-    /**
-     * 傳送玩家到試煉結構的指定座標附近
-     */
+
     private void teleportNearStructure(Player p, int x, int y, int z) {
-        // 0.5 讓玩家對齊方塊中心，+1 則是站在結構上方
         Location target = new Location(trialWorld, x + 0.5, y + 1.0, z + 0.5);
         p.teleport(target);
     }
 
     private class TrialChambersCommand implements CommandExecutor {
+
         @Override
         public boolean onCommand(@NotNull CommandSender sender, @NotNull Command cmd,
-                                 @NotNull String label, @NotNull String[] args) {
-            if (!(sender instanceof Player)) {
+                                 @NotNull String label, @NotNull String @NotNull [] args) {
+            if (!(sender instanceof Player player)) {
                 sender.sendMessage("§c只有玩家可以使用此指令");
                 return true;
             }
-            Player player = (Player) sender;
             originalLocations.put(player.getUniqueId(), player.getLocation());
             player.sendMessage("§6即將傳送至生成點並隱藏視野...");
 
             int range = getConfig().getInt("trial_range", 500);
             Random rnd = new Random();
-            int x = rnd.nextInt(range * 2 + 1) - range;
-            int z = rnd.nextInt(range * 2 + 1) - range;
-            int y = getConfig().getInt("trial_chamber.y", 50);
+            int x, y, z;
 
+            // Y 座標
+            y = getConfig().getInt("trial_chamber.y", 50);
+
+            // 保證與已放置結構至少 MIN_DISTANCE
+            do {
+                x = rnd.nextInt(range * 2 + 1) - range;
+                z = rnd.nextInt(range * 2 + 1) - range;
+            } while (!isFarFromExisting(x, y, z));
+
+            // 記錄並持久化
+            placedChambers.add(new BlockVector(x, y, z));
+            savePlacedChambersConfig();
+
+            // 更新 config 中的最新座標
             getConfig().set("trial_chamber.x", x);
-            getConfig().set("trial_chamber.y", y);
             getConfig().set("trial_chamber.z", z);
             saveConfig();
 
+            // 盲化與傳送
             Location center = new Location(trialWorld, x + 0.5, y + 5, z + 0.5);
-            player.teleport(center);// 先傳送到試煉中心
+            player.teleport(center);
             player.addPotionEffect(new org.bukkit.potion.PotionEffect(
-                    org.bukkit.potion.PotionEffectType.BLINDNESS, 400, 99, false, false, false));// 隱藏視野
+                    PotionEffectType.BLINDNESS, 400, 99, false, false, false));
             player.addPotionEffect(new org.bukkit.potion.PotionEffect(
-                    org.bukkit.potion.PotionEffectType.RESISTANCE, 300, 99, false, false, false));// 無敵
+                    PotionEffectType.RESISTANCE, 300, 99, false, false, false));
             player.addPotionEffect(new org.bukkit.potion.PotionEffect(
-                    org.bukkit.potion.PotionEffectType.SLOW_FALLING, 300, 2, false, false, false));// 減速墜落
+                    PotionEffectType.SLOW_FALLING, 300, 2, false, false, false));
 
-            Bukkit.getScheduler().runTaskLater(VoidTrialChambersPlugin.this, () -> placeStructure(x, y, z), 200L);// 延遲生成試煉結構
+            int finalZ = z;
+            int finalX1 = x;
+            Bukkit.getScheduler().runTaskLater(VoidTrialChambersPlugin.this, () -> placeStructure(finalX1, y, finalZ), 200L);
+            int finalX = x;
+            int finalZ1 = z;
             Bukkit.getScheduler().runTaskLater(VoidTrialChambersPlugin.this, () -> {
-                player.removePotionEffect(org.bukkit.potion.PotionEffectType.BLINDNESS);
-                player.removePotionEffect(org.bukkit.potion.PotionEffectType.SLOW_FALLING);
-                teleportNearStructure(player, x, y, z);
+                player.removePotionEffect(PotionEffectType.BLINDNESS);
+                player.removePotionEffect(PotionEffectType.SLOW_FALLING);
+                teleportNearStructure(player, finalX, y, finalZ1);
                 teleportToNearestBed(player);
             }, 240L);
 
             return true;
+        }
+
+        private boolean isFarFromExisting(int x, int y, int z) {
+            for (BlockVector vec : placedChambers) {
+                long dx = vec.getBlockX() - x;
+                long dz = vec.getBlockZ() - z;
+                if (dx*dx + dz*dz < MIN_DIST_SQ) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private void savePlacedChambersConfig() {
+            List<String> coords = new ArrayList<>();
+            for (BlockVector vec : placedChambers) {
+                coords.add(vec.getBlockX() + "," + vec.getBlockY() + "," + vec.getBlockZ());
+            }
+            getConfig().set("trial_chambers.placed", coords);
+            saveConfig();
         }
 
         private void placeStructure(int x, int y, int z) {
@@ -182,9 +242,6 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             getLogger().info("試煉之間已生成 at " + x + "," + y + "," + z);
         }
 
-        /**
-         * 在玩家附近 100 格範圍內搜尋最近的床鋪區塊，若找到則傳送至床上方，否則使用原有邏輯
-         */
         private void teleportToNearestBed(Player p) {
             Location playerLoc = p.getLocation();
             World world = p.getWorld();
@@ -219,7 +276,6 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
                 p.teleport(nearestBedLoc);
                 p.sendMessage("§6已傳送至最近的床鋪");
             } else {
-                // fallback to original or world spawn
                 Location orig = originalLocations.remove(p.getUniqueId());
                 if (orig != null) {
                     p.teleport(orig);
