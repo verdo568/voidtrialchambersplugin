@@ -1,0 +1,13 @@
+# Void Trial Chambers Plugin Configuration
+
+# 試煉世界的名稱
+trial_world_name: "trial_chambers_void"
+
+# 首次運行標記（插件會自動更新這個值）
+first_run: true
+
+# 試煉之間的位置（插件會自動填充這些值）
+trial_chamber:
+  x: 0
+  y: 50
+  z: 0

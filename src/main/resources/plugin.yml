@@ -1,0 +1,15 @@
+name: VoidTrialChambersPlugin
+version: 1.0-SNAPSHOT
+main: org.swim.voidTrialChambersPlugin.VoidTrialChambersPlugin
+api-version: '1.21.4'
+description: A plugin that allows players to enter Trial Chambers in a void world
+commands:
+  trialchambers:
+    description: Enter a Trial Chamber in a void world
+    usage: /trialchambers
+    permission: trialchambers.use
+    permission-message: You don't have permission to use this command.
+permissions:
+  trialchambers.use:
+    description: Allows player to use the /trialchambers command
+    default: true
