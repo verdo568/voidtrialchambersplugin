@@ -9,6 +9,11 @@ commands:
     usage: /trialchambers
     permission: trialchambers.use
     permission-message: You don't have permission to use this command.
+
+  exittrial:
+    description: "退出試煉，傳送回主世界重生點"
+    usage: /exittrial
+
 permissions:
   trialchambers.use:
     description: Allows player to use the /trialchambers command

@@ -56,8 +56,16 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         } else {
             getLogger().severe("無法註冊指令 'trialchambers'，請檢查 plugin.yml 設定！");
         }
+        // 註冊 /exittrial
+        if (getCommand("exittrial") != null) {
+            Objects.requireNonNull(getCommand("exittrial"))
+                    .setExecutor(new ExitTrialCommand());
+        } else {
+            getLogger().severe("無法註冊指令 'exittrial'，請檢查 plugin.yml 設定！");
+        }
         createVoidWorld();
         getLogger().info("Void Trial Chambers Plugin 已啟用");
+
     }
 
     @Override
@@ -110,6 +118,40 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         Player p = evt.getEntity();
         if (p.getWorld().equals(trialWorld)) {
             deathLocations.put(p.getUniqueId(), p.getLocation());
+        }
+    }
+
+    private class ExitTrialCommand implements CommandExecutor {
+        @Override
+        public boolean onCommand(@NotNull CommandSender sender,
+                                 @NotNull Command cmd,
+                                 @NotNull String label,
+                                 @NotNull String[] args) {
+            if (!(sender instanceof Player p)) {
+                sender.sendMessage("§c只有玩家可以使用此指令！");
+                return true;
+            }
+
+            // 抓主世界（world），如果不叫 world 就改成你的名稱
+            World mainWorld = Bukkit.getWorld("world");
+            if (mainWorld == null) {
+                p.sendMessage("§c找不到名為 'world' 的主世界！");
+                return true;
+            }
+
+            // 清除所有過往的試煉效果
+            p.removePotionEffect(PotionEffectType.BLINDNESS);
+            p.removePotionEffect(PotionEffectType.SLOW_FALLING);
+            p.removePotionEffect(PotionEffectType.SLOWNESS);
+            p.removePotionEffect(PotionEffectType.MINING_FATIGUE);
+            p.removePotionEffect(PotionEffectType.RESISTANCE);
+
+            // 傳送到主世界重生點
+            Location spawn = mainWorld.getSpawnLocation();
+            p.teleport(spawn);
+            p.sendMessage("§6你已退出試煉並被傳送至主世界重生點！");
+
+            return true;
         }
     }
 
