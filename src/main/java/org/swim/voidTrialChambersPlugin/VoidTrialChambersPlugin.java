@@ -17,7 +17,6 @@ import org.bukkit.generator.ChunkGenerator;
 import org.bukkit.generator.WorldInfo;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.potion.PotionEffectType;
-import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.util.BlockVector;
 import org.jetbrains.annotations.NotNull;
 
@@ -86,6 +85,9 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
                 trialWorld.setSpawnLocation(0, 64, 0);
                 getLogger().info("Void world created: " + name);
                 createSpawnPlatform();
+                // —— 在这里设置 keepInventory ——
+                trialWorld.setGameRule(GameRule.KEEP_INVENTORY, true);
+                getLogger().info("已為世界 “" + name + "” 啟用 keepInventory");
             } else {
                 getLogger().severe("創建虛空世界失敗: " + name);
             }
@@ -112,22 +114,17 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
     }
 
     @EventHandler
-    public void onPlayerRespawn(PlayerRespawnEvent evt) {
-        Player p = evt.getPlayer();
-        UUID id = p.getUniqueId();
-        if (deathLocations.containsKey(id)) {
-            Location orig = originalLocations.remove(id);
-            deathLocations.remove(id);
-            if (orig != null) {
-                new BukkitRunnable() {
-                    @Override
-                    public void run() {
-                        p.teleport(orig);
-                        p.sendMessage("§6你已返回原本世界位置！");
-                    }
-                }.runTaskLater(this, 5L);
-            }
+    public void onPlayerRespawnToMainSpawn(PlayerRespawnEvent evt) {
+        // 取得預設主世界（名稱通常是 "world"，如有不同請改成你的主世界名稱）
+        World mainWorld = Bukkit.getWorld("world");
+        if (mainWorld == null) {
+            // 如果找不到就 fallback 回玩家原本的重生點
+            return;
         }
+        // 設定重生位置
+        Location mainSpawn = mainWorld.getSpawnLocation();
+        evt.setRespawnLocation(mainSpawn);
+        evt.getPlayer().sendMessage("§6你已重生於主世界重生點！");
     }
 
     @EventHandler
@@ -196,9 +193,13 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             player.addPotionEffect(new org.bukkit.potion.PotionEffect(
                     PotionEffectType.BLINDNESS, 400, 99, false, false, false));
             player.addPotionEffect(new org.bukkit.potion.PotionEffect(
-                    PotionEffectType.RESISTANCE, 300, 99, false, false, false));
+                    PotionEffectType.RESISTANCE, 380, 99, false, false, false));
             player.addPotionEffect(new org.bukkit.potion.PotionEffect(
                     PotionEffectType.SLOW_FALLING, 300, 2, false, false, false));
+            player.addPotionEffect(new org.bukkit.potion.PotionEffect(
+                    PotionEffectType.SLOWNESS, 300, 99, false, false, false));
+            player.addPotionEffect(new org.bukkit.potion.PotionEffect(
+                    PotionEffectType.MINING_FATIGUE, 300, 99, false, false, false));
 
             int finalZ = z;
             int finalX1 = x;
@@ -208,6 +209,8 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             Bukkit.getScheduler().runTaskLater(VoidTrialChambersPlugin.this, () -> {
                 player.removePotionEffect(PotionEffectType.BLINDNESS);
                 player.removePotionEffect(PotionEffectType.SLOW_FALLING);
+                player.removePotionEffect(PotionEffectType.SLOWNESS);
+                player.removePotionEffect(PotionEffectType.MINING_FATIGUE);
                 teleportNearStructure(player, finalX, y, finalZ1);
                 teleportToNearestBed(player);
             }, 240L);
