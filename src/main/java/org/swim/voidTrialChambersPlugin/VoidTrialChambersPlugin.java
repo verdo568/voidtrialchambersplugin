@@ -219,7 +219,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
                 return true;
             }
             originalLocations.put(player.getUniqueId(), player.getLocation());
-            player.sendMessage("§6即將傳送至生成點並隱藏視野...");
+            player.sendMessage("§6正在進入試煉之間副本，持續下落為正常現象...");
 
             int range = getConfig().getInt("trial_range", 500);
             Random rnd = new Random();
@@ -333,7 +333,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
 
             if (nearestBedLoc != null) {
                 p.teleport(nearestBedLoc);
-                p.sendMessage("§6已傳送至最近的床鋪");
+                p.sendMessage("§6已進入試煉之間副本");
             } else {
                 Location orig = originalLocations.remove(p.getUniqueId());
                 if (orig != null) {
