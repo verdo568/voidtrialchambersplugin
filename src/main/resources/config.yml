@@ -1,13 +1,14 @@
-# Void Trial Chambers Plugin Configuration
+# config.yml - 配置 VoidTrialChambersPlugin
 
-# 試煉世界的名稱
-trial_world_name: "trial_chambers_void"
+# 隨機座標生成範圍 (X, Z)，預設 500
+trial_range: 500
 
-# 首次運行標記（插件會自動更新這個值）
-first_run: true
-
-# 試煉之間的位置（插件會自動填充這些值）
+# 試煉房間生成的固定 Y 座標，預設 50
 trial_chamber:
-  x: 0
   y: 50
-  z: 0
+
+# 死亡時不觸發插件內傳送的世界列表
+excluded_worlds:
+  - world
+  - world_nether
+  - world_the_end
