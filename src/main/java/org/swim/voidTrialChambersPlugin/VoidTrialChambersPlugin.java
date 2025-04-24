@@ -162,7 +162,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
 
         @Override
         public boolean onCommand(@NotNull CommandSender sender, @NotNull Command cmd,
-                                 @NotNull String label, @NotNull String[] args) {
+                                 @NotNull String label, @NotNull String @NotNull [] args) {
             if (!(sender instanceof Player player)) {
                 return true;
             }
@@ -242,7 +242,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
 
         private void teleportToNearestBedOrOrigin(Player p, World world) {
             Location loc = p.getLocation();
-            Location bedLoc = findNearestBed(loc, world, 150);
+            Location bedLoc = findNearestBed(loc, world, 120);
             if (bedLoc != null) {
                 p.teleport(bedLoc);
                 p.sendMessage("§6已進入試煉之間副本");
@@ -287,7 +287,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
     private class ExitTrialCommand implements CommandExecutor {
         @Override
         public boolean onCommand(@NotNull CommandSender sender, @NotNull Command cmd,
-                                 @NotNull String label, @NotNull String[] args) {
+                                 @NotNull String label, @NotNull String @NotNull [] args) {
             if (!(sender instanceof Player p)) {
                 return true;
             }
