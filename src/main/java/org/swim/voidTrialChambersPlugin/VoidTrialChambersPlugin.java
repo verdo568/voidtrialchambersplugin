@@ -164,28 +164,6 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         }
         file.delete();
     }
-    // 遞迴標記檔案或資料夾於 JVM 結束時刪除
-    private void markFolderDeleteOnExit(File file) {
-        if (file.isDirectory()) {
-            File[] children = file.listFiles();
-            if (children != null) {
-                for (File child : children) {
-                    markFolderDeleteOnExit(child);
-                }
-            }
-        }
-        file.deleteOnExit();
-    }
-
-    // 遞迴同步刪除檔案或資料夾
-    private void deleteFolderRecursively(File file) {
-        if (file.isDirectory()) {
-            for (File child : Objects.requireNonNull(file.listFiles())) {
-                deleteFolderRecursively(child);
-            }
-        }
-        file.delete();
-    }
 
     /**
      * /trialchambers 指令處理，重複執行前先刪除舊世界
