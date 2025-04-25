@@ -4,25 +4,27 @@ import org.bukkit.*;
 import org.bukkit.World.Environment;
 import org.bukkit.block.Bed;
 import org.bukkit.block.Block;
+import org.bukkit.boss.BarColor;
+import org.bukkit.boss.BarStyle;
+import org.bukkit.boss.BossBar;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
-import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.generator.ChunkGenerator;
 import org.bukkit.generator.WorldInfo;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.potion.PotionEffectType;
 import org.bukkit.scheduler.BukkitRunnable;
+import org.bukkit.scheduler.BukkitTask;
+import org.geysermc.floodgate.api.FloodgateApi;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.File;
 import java.io.IOException;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.*;
 
 public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
@@ -35,6 +37,10 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
     private List<String> excludedWorldNames;
     // 試煉世界冷卻時間
     private final Map<UUID, Long> trialCooldowns = new HashMap<>();
+    // 冷卻時間的 BossBar
+    private final Map<UUID, BossBar> cooldownBars = new HashMap<>();
+    private final Map<UUID, BukkitTask> cooldownTasks = new HashMap<>();
+
 
     @Override
     public void onEnable() {
@@ -60,15 +66,14 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
     @Override
     public void onDisable() {
         for (World w : new ArrayList<>(playerTrialWorlds.values())) {
-            deleteWorld(w);
+            clearEntityAndPoiFolders(w);
         }
         getLogger().info("Void Trial Chambers Plugin 已停用");
     }
 
     // 建立個人試煉世界並確保 data 資料夾及空檔案存在
     private World createPersonalTrialWorld(UUID uuid) {
-        String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
-        String worldName = "trial_" + uuid + "_" + timestamp;
+        String worldName = "trial_" + uuid;
         World world = new WorldCreator(worldName)
                 .environment(Environment.NORMAL)
                 .generator(new VoidChunkGenerator())
@@ -110,26 +115,54 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             }
         }
     }
-
-    private void deleteWorld(World world) {
+    /**
+     * 清空指定世界的 entities 和 poi 資料夾內容
+     */
+    private void clearEntityAndPoiFolders(World world) {
         if (world == null) return;
-        String name = world.getName();
-        File folder = world.getWorldFolder();
+        File worldFolder = world.getWorldFolder();
+        // 假設 Minecraft 在 data 子資料夾下存放 entities 和 poi
+        File entitiesDir = new File(worldFolder, "entities");
+        File poiDir = new File(worldFolder, "poi");
+        File regionDir = new File(worldFolder, "region");
+
+        // 卸載世界，但不刪除檔案
         Bukkit.unloadWorld(world, false);
-        if (isEnabled()) {
-            // 插件仍啟用：延遲排程刪除
-            new BukkitRunnable() {
-                @Override
-                public void run() {
-                    deleteFolderRecursively(folder);
-                    getLogger().info("Deleted trial world: " + name);
+
+        // 同步刪除指定資料夾內容
+        deleteFolderContents(entitiesDir);
+        deleteFolderContents(poiDir);
+        deleteFolderContents(regionDir);
+
+        getLogger().info("Cleared entities and poi folders for world: " + world.getName());
+    }
+    /**
+     * 刪除資料夾下所有檔案與子資料夾，但保留資料夾本身
+     */
+    private void deleteFolderContents(File folder) {
+        if (folder.exists() && folder.isDirectory()) {
+            File[] files = folder.listFiles();
+            if (files != null) {
+                for (File f : files) {
+                    deleteRecursively(f);
                 }
-            }.runTaskLater(VoidTrialChambersPlugin.this, 40L);
-        } else {
-            // 插件已停用：標記在 JVM 結束時刪除，避免影響伺服器關機時資料寫入
-            markFolderDeleteOnExit(folder);
-            getLogger().info("Marked trial world for deletion on exit: " + name);
+            }
         }
+    }
+
+    /**
+     * 遞迴刪除檔案或資料夾
+     */
+    private void deleteRecursively(File file) {
+        if (file.isDirectory()) {
+            File[] children = file.listFiles();
+            if (children != null) {
+                for (File child : children) {
+                    deleteRecursively(child);
+                }
+            }
+        }
+        file.delete();
     }
     // 遞迴標記檔案或資料夾於 JVM 結束時刪除
     private void markFolderDeleteOnExit(File file) {
@@ -158,7 +191,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
      * /trialchambers 指令處理，重複執行前先刪除舊世界
      */
     private class TrialChambersCommand implements CommandExecutor {
-        private static final long COOLDOWN_MS = 30_000L;
+        private static final long COOLDOWN_MS = 300_000L; // 5 分鐘
 
         @Override
         public boolean onCommand(@NotNull CommandSender sender, @NotNull Command cmd,
@@ -171,16 +204,61 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             long last = trialCooldowns.getOrDefault(uid, 0L);
             long elapsed = now - last;
 
+            boolean isBedrock = FloodgateApi.getInstance().isFloodgatePlayer(uid);
+
             if (elapsed < COOLDOWN_MS) {
-                long secondsLeft = (COOLDOWN_MS - elapsed + 999) / 1000;
-                player.sendMessage("§c請稍等 " + secondsLeft + " 秒，再使用 /trialchambers");
+                long remaining = COOLDOWN_MS - elapsed;
+                long minutesLeft = remaining / 60000;
+                long secondsLeft = (remaining % 60000 + 999) / 1000;
+
+                String timeLeft = (minutesLeft > 0 ? minutesLeft + " 分 " : "") + secondsLeft + " 秒";
+                player.sendMessage("§e指令冷卻中，請稍等 " + timeLeft + "後再試");
+
+                // **仅在 Java 客户端显示 BossBar**
+                if (!isBedrock) {
+                    BossBar bar = cooldownBars.computeIfAbsent(uid, id -> {
+                        BossBar b = Bukkit.createBossBar("§e指令冷卻中... " + timeLeft,
+                                BarColor.BLUE, BarStyle.SOLID);
+                        b.addPlayer(player);
+                        b.setVisible(true);
+                        return b;
+                    });
+
+                    if (!cooldownTasks.containsKey(uid)) {
+                        BukkitTask task = new BukkitRunnable() {
+                            final long startTime = System.currentTimeMillis();
+                            final long total = remaining;
+                            @Override
+                            public void run() {
+                                long now = System.currentTimeMillis();
+                                long passed = now - startTime;
+                                long left = total - passed;
+                                if (left <= 0) {
+                                    bar.removeAll();
+                                    cooldownBars.remove(uid);
+                                    cooldownTasks.remove(uid);
+                                    cancel();
+                                    return;
+                                }
+                                long min = left / 60000;
+                                long sec = (left % 60000 + 999) / 1000;
+                                bar.setTitle("§e指令冷卻中... " +
+                                        (min>0?min+" 分 ":"") + sec + " 秒");
+                                bar.setProgress((double) left / total);
+                            }
+                        }.runTaskTimer(VoidTrialChambersPlugin.this, 0L, 20L);
+                        cooldownTasks.put(uid, task);
+                    } else {
+                        bar.setTitle("§e指令冷卻中... " + timeLeft);
+                    }
+                }
                 return true;
             }
 
             // 刪除舊試煉世界
             World oldWorld = playerTrialWorlds.remove(uid);
             if (oldWorld != null) {
-                deleteWorld(oldWorld);
+                clearEntityAndPoiFolders(oldWorld);
             }
 
             trialCooldowns.put(uid, now);
@@ -203,6 +281,31 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
 
             player.teleport(center);
             applyTrialEffects(player);
+
+            // 顯示「試煉準備中...」進度條
+            BossBar trialBar = Bukkit.createBossBar("§6試煉準備中...", BarColor.YELLOW, BarStyle.SOLID);
+            trialBar.addPlayer(player);
+            trialBar.setVisible(true);
+
+            new BukkitRunnable() {
+                final long total = 13_000L;
+                final long start = System.currentTimeMillis();
+
+                @Override
+                public void run() {
+                    long now = System.currentTimeMillis();
+                    long elapsed = now - start;
+
+                    if (elapsed >= total) {
+                        trialBar.removePlayer(player);
+                        cancel();
+                        return;
+                    }
+
+                    double progress = (double) elapsed / total;
+                    trialBar.setProgress(progress);
+                }
+            }.runTaskTimer(VoidTrialChambersPlugin.this, 0L, 10L); // 每 0.5 秒更新一次
 
             new BukkitRunnable() {
                 @Override public void run() {
@@ -277,13 +380,6 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         }
     }
 
-    @EventHandler
-    public void onPlayerQuit(PlayerQuitEvent evt) {
-        UUID uid = evt.getPlayer().getUniqueId();
-        World w = playerTrialWorlds.remove(uid);
-        deleteWorld(w);
-    }
-
     private class ExitTrialCommand implements CommandExecutor {
         @Override
         public boolean onCommand(@NotNull CommandSender sender, @NotNull Command cmd,
@@ -308,7 +404,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             }
             UUID uid = p.getUniqueId();
             World w = playerTrialWorlds.remove(uid);
-            deleteWorld(w);
+            clearEntityAndPoiFolders(w);
             return true;
         }
     }
@@ -326,7 +422,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             p.sendMessage("§6你已重生於主世界重生點！");
             UUID uid = p.getUniqueId();
             World w = playerTrialWorlds.remove(uid);
-            deleteWorld(w);
+            clearEntityAndPoiFolders(w);
         }
     }
 
