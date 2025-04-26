@@ -179,7 +179,10 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
                 }
             }
         }
-        file.delete();
+        boolean ok = file.delete();
+        if (!ok) {
+            getLogger().warning("無法刪除檔案/資料夾: " + file.getAbsolutePath());
+        }
     }
 
     @EventHandler
@@ -409,7 +412,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
 
         private void teleportToNearestBedOrOrigin(Player p, World world) {
             Location loc = p.getLocation();
-            Location bedLoc = findNearestBed(loc, world, 120);
+            Location bedLoc = findNearestBed(loc, world);
             if (bedLoc != null) {
                 p.teleport(bedLoc);
                 p.sendMessage("§6已進入試煉之間副本");
@@ -422,13 +425,13 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             }
         }
 
-        private Location findNearestBed(Location center, World world, int radius) {
+        private Location findNearestBed(Location center, World world) {
             double best = Double.MAX_VALUE;
             Location bestLoc = null;
             int cx = center.getBlockX(), cy = center.getBlockY(), cz = center.getBlockZ();
-            for (int x = cx - radius; x <= cx + radius; x++) {
-                for (int z = cz - radius; z <= cz + radius; z++) {
-                    for (int y = world.getMinHeight(); y <= Math.min(world.getMaxHeight(), cy + radius); y++) {
+            for (int x = cx - 100; x <= cx + 100; x++) {
+                for (int z = cz - 100; z <= cz + 100; z++) {
+                    for (int y = world.getMinHeight(); y <= Math.min(world.getMaxHeight(), cy + 100); y++) {
                         Block b = world.getBlockAt(x, y, z);
                         if (b.getState() instanceof Bed) {
                             double dist = b.getLocation().distanceSquared(center);
@@ -494,7 +497,6 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
     public ChunkGenerator getDefaultWorldGenerator(@NotNull String worldName, String id) {
         return new VoidChunkGenerator();
     }
-
     public static class VoidChunkGenerator extends ChunkGenerator {
         @Override public void generateNoise(@NotNull WorldInfo info, @NotNull Random rand, int x, int z, @NotNull ChunkData data) {}
         @Override public void generateSurface(@NotNull WorldInfo info, @NotNull Random rand, int x, int z, @NotNull ChunkData data) {}
