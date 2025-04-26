@@ -11,6 +11,9 @@ import org.bukkit.boss.BossBar;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
+import org.bukkit.command.TabCompleter;
+import org.bukkit.entity.EntityType;
+import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -39,14 +42,18 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
     private final Map<UUID, World> playerTrialWorlds = new HashMap<>();
     // 原始位置備份
     private final Map<UUID, Location> originalLocations = new HashMap<>();
+    // 玩家難度映射
+    private final Map<UUID, TrialDifficulty> playerDifficulties = new HashMap<>();
+    // MobSpawner 任務映射
+    private final Map<UUID, MobSpawnerTask> spawnerTasks = new HashMap<>();
     // 排除處理的世界名單
     private List<String> excludedWorldNames;
     // 試煉世界冷卻時間
     private final Map<UUID, Long> trialCooldowns = new HashMap<>();
     // 冷卻時間的 BossBar
     private final Map<UUID, BossBar> cooldownBars = new HashMap<>();
+    // 冷卻時間的任務
     private final Map<UUID, BukkitTask> cooldownTasks = new HashMap<>();
-
 
     @Override
     public void onEnable() {
@@ -55,22 +62,17 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         reloadConfig();
         excludedWorldNames = getConfig().getStringList("excluded_worlds");
 
-        if (getCommand("trialchambers") != null) {
-            Objects.requireNonNull(getCommand("trialchambers")).setExecutor(new TrialChambersCommand());
-        } else {
-            getLogger().severe("無法註冊指令 'trialchambers'");
-        }
-        if (getCommand("exittrial") != null) {
-            Objects.requireNonNull(getCommand("exittrial")).setExecutor(new ExitTrialCommand());
-        } else {
-            getLogger().severe("無法註冊指令 'exittrial'");
-        }
+        TrialChambersCommand trialCmd = new TrialChambersCommand();
+        Objects.requireNonNull(getCommand("trialchambers")).setExecutor(new TrialChambersCommand());
+        Objects.requireNonNull(getCommand("exittrial")).setExecutor(new ExitTrialCommand());
 
         getLogger().info("Void Trial Chambers Plugin 已啟用");
     }
 
     @Override
     public void onDisable() {
+        // 停止所有 Spawner 任務
+        spawnerTasks.values().forEach(MobSpawnerTask::stop);
         // 先複製一份要處理的世界列表，避免迭代時並發修改
         for (World w : new ArrayList<>(playerTrialWorlds.values())) {
             // 如果世界裡有玩家，就逐一踢出
@@ -85,7 +87,89 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         }
         getLogger().info("Void Trial Chambers Plugin 已停用");
     }
+    /**
+     * Difficulty enum 定義刷怪列表
+     */
+    public enum TrialDifficulty {
+        EASY("簡單"),
+        NORMAL("普通"),
+        HARD("困難");
 
+        private final String display;
+        TrialDifficulty(String display) { this.display = display; }
+
+        public static TrialDifficulty from(String s) {
+            for (TrialDifficulty d : values()) {
+                if (d.name().equalsIgnoreCase(s) || d.display.equalsIgnoreCase(s)) return d;
+            }
+            return null;
+        }
+
+        public List<EntityType> getMobs() {
+            return switch (this) {
+                case NORMAL -> List.of(EntityType.ZOMBIE, EntityType.SKELETON);
+                case HARD   -> List.of(EntityType.ZOMBIE, EntityType.SKELETON, EntityType.CREEPER, EntityType.SPIDER);
+                default     -> List.of();
+            };
+        }
+    }
+
+    /**
+     * MobSpawnerTask: 定時隨機在玩家後方及周圍生成怪物
+     */
+    private class MobSpawnerTask {
+        private final Player player;
+        private final World world;
+        private final TrialDifficulty diff;
+        private BukkitTask task;
+        private final Random rnd = new Random();
+
+        public MobSpawnerTask(UUID uid, World world, Player player, TrialDifficulty diff) {
+            this.world = world;
+            this.player = player;
+            this.diff = diff;
+        }
+
+        public void start() {
+            scheduleNext();
+        }
+
+        private void scheduleNext() {
+            int delaySec = rnd.nextInt(8) + 3; // 3~10秒
+            task = new BukkitRunnable() {
+                @Override
+                public void run() {
+                    spawnWave();
+                    scheduleNext();
+                }
+            }.runTaskLater(VoidTrialChambersPlugin.this, delaySec * 20L);
+        }
+
+        private void spawnWave() {
+            int count = switch(diff) {
+                case NORMAL -> rnd.nextInt(3) + 2; // 2~4
+                case HARD   -> rnd.nextInt(4) + 3; // 3~6
+                default     -> 0;
+            };
+            Location loc = player.getLocation();
+            List<EntityType> types = diff.getMobs();
+            for (int i = 0; i < count; i++) {
+                EntityType type = types.get(rnd.nextInt(types.size()));
+                double yaw = Math.toRadians(player.getLocation().getYaw());
+                double angle = yaw + Math.toRadians(rnd.nextInt(120) + 60);
+                double distance = rnd.nextDouble() * 2 + 3;
+                double x = loc.getX() + Math.cos(angle) * distance;
+                double y = loc.getY();
+                double z = loc.getZ() + Math.sin(angle) * distance;
+                LivingEntity e = (LivingEntity) world.spawnEntity(new Location(world, x, y, z), type);
+                e.setCustomNameVisible(false);
+            }
+        }
+
+        public void stop() {
+            if (task != null) task.cancel();
+        }
+    }
 
     // 建立個人試煉世界並確保 data 資料夾及空檔案存在
     private World createPersonalTrialWorld(UUID uuid) {
@@ -273,7 +357,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
     /**
      * /trialchambers 指令處理，重複執行前先刪除舊世界
      */
-    private class TrialChambersCommand implements CommandExecutor {
+    private class TrialChambersCommand implements CommandExecutor, TabCompleter {
         private static final long COOLDOWN_MS = 150_000L; // 2.5 分鐘
 
         @Override
@@ -337,6 +421,10 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
                 return true;
             }
 
+            String input = args.length>0? args[0] : "簡單";
+            TrialDifficulty diff = TrialDifficulty.from(input);
+            if (diff == null) { player.sendMessage("§c無效難度，請輸入 簡單/普通/困難"); return true; }
+
             // 刪除舊試煉世界
             World oldWorld = playerTrialWorlds.remove(uid);
             if (oldWorld != null) {
@@ -353,6 +441,11 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
                 return true;
             }
             playerTrialWorlds.put(uid, personal);
+            // 記錄難度並啟動刷怪任務
+            playerDifficulties.put(uid, diff);
+            MobSpawnerTask spawner = new MobSpawnerTask(uid, personal, player, diff);
+            spawnerTasks.put(uid, spawner);
+            spawner.start();
 
             int y = getConfig().getInt("trial_chamber.y", 50);
             int range = getConfig().getInt("trial_range", 500);
@@ -407,7 +500,21 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
 
             return true;
         }
-
+        @Override
+        public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
+            if (args.length == 1) {
+                List<String> options = Arrays.asList("困難", "普通", "簡單");
+                String input = args[0];
+                List<String> completions = new ArrayList<>();
+                for (String option : options) {
+                    if (option.startsWith(input)) {
+                        completions.add(option);
+                    }
+                }
+                return completions;
+            }
+            return Collections.emptyList();
+        }
         private void applyTrialEffects(Player p) {
             p.addPotionEffect(new org.bukkit.potion.PotionEffect(PotionEffectType.BLINDNESS, 400, 99));
             p.addPotionEffect(new org.bukkit.potion.PotionEffect(PotionEffectType.RESISTANCE, 380, 99));
@@ -485,6 +592,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
                 p.sendMessage("§6你已退出試煉並傳送至主世界");
             }
             UUID uid = p.getUniqueId();
+            spawnerTasks.remove(uid).stop();
             World w = playerTrialWorlds.remove(uid);
             clearEntityAndPoiFolders(w);
             return true;
