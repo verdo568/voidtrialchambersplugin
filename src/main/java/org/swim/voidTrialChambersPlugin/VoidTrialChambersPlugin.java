@@ -26,11 +26,11 @@ import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
 import org.geysermc.floodgate.api.FloodgateApi;
 import org.jetbrains.annotations.NotNull;
-import org.bukkit.Difficulty;
-
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.*;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.*;
 
 public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
@@ -134,57 +134,50 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
     }
     /**
      * 清空指定世界的 entities 和 poi 資料夾內容
+     * 使用 Java NIO Files API 清空指定世界的資料夾內容，但保留資料夾本身
      */
     private void clearEntityAndPoiFolders(World world) {
         if (world == null) return;
         File worldFolder = world.getWorldFolder();
-        // 假設 Minecraft 在 data 子資料夾下存放 entities 和 poi
-        File entitiesDir = new File(worldFolder, "entities");
-        File poiDir = new File(worldFolder, "poi");
-        File regionDir = new File(worldFolder, "region");
 
         // 卸載世界，但不刪除檔案
         Bukkit.unloadWorld(world, false);
 
-        // 同步刪除指定資料夾內容
-        deleteFolderContents(entitiesDir);
-        deleteFolderContents(poiDir);
-        deleteFolderContents(regionDir);
+        // 定義要清理的目錄
+        Path[] pathsToClean = {
+                Paths.get(worldFolder.getPath(), "entities"),
+                Paths.get(worldFolder.getPath(), "poi"),
+                Paths.get(worldFolder.getPath(), "region")
+        };
 
-        getLogger().info("Cleared entities and poi folders for world: " + world.getName());
-    }
-    /**
-     * 刪除資料夾下所有檔案與子資料夾，但保留資料夾本身
-     */
-    private void deleteFolderContents(File folder) {
-        if (folder.exists() && folder.isDirectory()) {
-            File[] files = folder.listFiles();
-            if (files != null) {
-                for (File f : files) {
-                    deleteRecursively(f);
+        for (Path directory : pathsToClean) {
+            if (Files.exists(directory)) {
+                try {
+                    // 使用 walkFileTree 遍歷目錄樹並只刪除內容
+                    Files.walkFileTree(directory, new SimpleFileVisitor<>() {
+                        @Override
+                        public @NotNull FileVisitResult visitFile(@NotNull Path file, @NotNull BasicFileAttributes attrs) throws IOException {
+                            Files.delete(file);
+                            return FileVisitResult.CONTINUE;
+                        }
+
+                        @Override
+                        public @NotNull FileVisitResult postVisitDirectory(@NotNull Path dir, IOException exc) throws IOException {
+                            // 如果不是要清理的根目錄，則刪除此子目錄
+                            if (!dir.equals(directory)) {
+                                Files.delete(dir);
+                            }
+                            return FileVisitResult.CONTINUE;
+                        }
+                    });
+                } catch (IOException e) {
+                    getLogger().warning("清理資料夾內容時出錯 " + directory + ": " + e.getMessage());
                 }
             }
         }
     }
 
-    /**
-     * 遞迴刪除檔案或資料夾
-     */
-    private void deleteRecursively(File file) {
-        if (file.isDirectory()) {
-            File[] children = file.listFiles();
-            if (children != null) {
-                for (File child : children) {
-                    deleteRecursively(child);
-                }
-            }
-        }
-        boolean ok = file.delete();
-        if (!ok) {
-            getLogger().warning("無法刪除檔案/資料夾: " + file.getAbsolutePath());
-        }
-    }
-
+    // 攔截 /tp 和 /teleport 指令
     @EventHandler
     public void onPlayerCommand(PlayerCommandPreprocessEvent event) {
         Player player = event.getPlayer();
