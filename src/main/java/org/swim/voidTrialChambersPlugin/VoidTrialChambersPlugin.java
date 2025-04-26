@@ -13,6 +13,7 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
+import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.generator.ChunkGenerator;
 import org.bukkit.generator.WorldInfo;
@@ -163,6 +164,24 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             }
         }
         file.delete();
+    }
+
+    @EventHandler
+    public void onPlayerCommand(PlayerCommandPreprocessEvent event) {
+        Player player = event.getPlayer();
+        String worldName = player.getWorld().getName();
+
+        // 檢查是否在試煉世界，且不是 OP
+        if (worldName.startsWith("trial_") && !player.isOp()) {
+            String message = event.getMessage().toLowerCase();
+
+            // 檢查指令是否為 /tp 或 /teleport
+            if (message.startsWith("/tp ") || message.equals("/tp") ||
+                    message.startsWith("/teleport ") || message.equals("/teleport")) {
+                event.setCancelled(true);
+                player.sendMessage("§c此地禁止使用 /tp 指令！");
+            }
+        }
     }
 
     /**
