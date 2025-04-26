@@ -108,7 +108,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         public List<EntityType> getMobs() {
             return switch (this) {
                 case NORMAL -> List.of(EntityType.ZOMBIE, EntityType.SKELETON);
-                case HARD   -> List.of(EntityType.ZOMBIE, EntityType.SKELETON, EntityType.CREEPER, EntityType.SPIDER);
+                case HARD   -> List.of(EntityType.ZOMBIE, EntityType.SKELETON, EntityType.CREEPER, EntityType.SPIDER, EntityType.ENDERMAN, EntityType.WITCH, EntityType.SLIME);
                 default     -> List.of();
             };
         }
@@ -145,6 +145,14 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             }.runTaskLater(VoidTrialChambersPlugin.this, delaySec * 20L);
         }
 
+        private boolean isSafeSpawnLocation(Location loc) {
+            // 檢查當前區塊以及頭頂一格是否為空氣(假設空氣代表沒有障礙物)
+            // 如果需要更精細的條件可以根據需求修改
+            Block blockAtLoc = loc.getBlock();
+            Block blockAbove = loc.clone().add(0, 1, 0).getBlock();
+            return blockAtLoc.getType() == Material.AIR && blockAbove.getType() == Material.AIR;
+        }
+
         private void spawnWave() {
             int count = switch(diff) {
                 case NORMAL -> rnd.nextInt(3) + 2; // 2~4
@@ -161,7 +169,14 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
                 double x = loc.getX() + Math.cos(angle) * distance;
                 double y = loc.getY();
                 double z = loc.getZ() + Math.sin(angle) * distance;
-                LivingEntity e = (LivingEntity) world.spawnEntity(new Location(world, x, y, z), type);
+                Location spawnLoc = new Location(world, x, y, z);
+
+                // 如果生成位置不安全，可以嘗試調整位置，例如向上移動一格
+                if (!isSafeSpawnLocation(spawnLoc)) {
+                    spawnLoc.add(0, 1, 0);
+                }
+
+                LivingEntity e = (LivingEntity) world.spawnEntity(spawnLoc, type);
                 e.setCustomNameVisible(false);
             }
         }
