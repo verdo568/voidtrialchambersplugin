@@ -1,5 +1,6 @@
 package org.swim.voidTrialChambersPlugin;
 
+import net.kyori.adventure.text.Component;
 import org.bukkit.*;
 import org.bukkit.World.Environment;
 import org.bukkit.block.Bed;
@@ -13,8 +14,10 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
+import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
+import org.bukkit.event.world.PortalCreateEvent;
 import org.bukkit.generator.ChunkGenerator;
 import org.bukkit.generator.WorldInfo;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -66,11 +69,21 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
 
     @Override
     public void onDisable() {
+        // 先複製一份要處理的世界列表，避免迭代時並發修改
         for (World w : new ArrayList<>(playerTrialWorlds.values())) {
+            // 如果世界裡有玩家，就逐一踢出
+            for (Player p : w.getPlayers()) {
+                // 使用 Component API 組成訊息
+                Component msg = Component.text("§c伺服器/插件正在關閉，您已被踢出試煉世界");
+                // 直接呼叫 kick(Component) 取代已棄用的 kickPlayer(String)
+                p.kick(msg);
+            }
+            // 然後再清空 entities、poi、region 等資料夾
             clearEntityAndPoiFolders(w);
         }
         getLogger().info("Void Trial Chambers Plugin 已停用");
     }
+
 
     // 建立個人試煉世界並確保 data 資料夾及空檔案存在
     private World createPersonalTrialWorld(UUID uuid) {
@@ -182,6 +195,57 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
                 player.sendMessage("§c此地禁止使用 /tp 指令！");
             }
         }
+    }
+    @EventHandler
+    public void onSignPlace(BlockPlaceEvent event) {
+        Block block = event.getBlockPlaced();
+        String worldName = block.getWorld().getName();
+
+        // 只在試煉世界中攔截
+        if (!worldName.startsWith("trial_")) return;
+
+        Material type = block.getType();
+        boolean isSign = switch (type) {
+            // 直立 & 牆面告示牌
+            case OAK_SIGN, SPRUCE_SIGN, BIRCH_SIGN, JUNGLE_SIGN,
+                 ACACIA_SIGN, DARK_OAK_SIGN,
+                 OAK_WALL_SIGN, SPRUCE_WALL_SIGN, BIRCH_WALL_SIGN,
+                 JUNGLE_WALL_SIGN, ACACIA_WALL_SIGN, DARK_OAK_WALL_SIGN -> true;
+
+            // 懸掛告示牌
+            case OAK_HANGING_SIGN, SPRUCE_HANGING_SIGN, BIRCH_HANGING_SIGN,
+                 JUNGLE_HANGING_SIGN, ACACIA_HANGING_SIGN, CHERRY_HANGING_SIGN,
+                 DARK_OAK_HANGING_SIGN, PALE_OAK_HANGING_SIGN, MANGROVE_HANGING_SIGN,
+                 BAMBOO_HANGING_SIGN, CRIMSON_HANGING_SIGN, WARPED_HANGING_SIGN -> true;
+
+            // 牆面懸掛告示牌
+            case OAK_WALL_HANGING_SIGN, SPRUCE_WALL_HANGING_SIGN,
+                 BIRCH_WALL_HANGING_SIGN, JUNGLE_WALL_HANGING_SIGN,
+                 ACACIA_WALL_HANGING_SIGN, CHERRY_WALL_HANGING_SIGN,
+                 DARK_OAK_WALL_HANGING_SIGN, MANGROVE_WALL_HANGING_SIGN,
+                 CRIMSON_WALL_HANGING_SIGN, WARPED_WALL_HANGING_SIGN,
+                 BAMBOO_WALL_HANGING_SIGN -> true;
+
+            default -> false;
+        };
+
+        if (isSign) {
+            event.setCancelled(true);
+            // 使用 Adventure Component API 傳送提示
+            event.getPlayer().sendMessage(
+                    Component.text("§c此地禁止放置任何告示牌！")
+            );
+        }
+    }
+
+    // 攔截任何形式的傳送門生成（保險起見）
+    @EventHandler
+    public void onPortalCreate(PortalCreateEvent event) {
+        World world = event.getWorld();
+        if (!world.getName().startsWith("trial_")) return;
+
+        // 取消所有傳送門結構生成
+        event.setCancelled(true);
     }
 
     /**
