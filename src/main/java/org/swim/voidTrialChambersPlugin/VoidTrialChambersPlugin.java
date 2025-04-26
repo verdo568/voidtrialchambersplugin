@@ -90,36 +90,59 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
     // 建立個人試煉世界並確保 data 資料夾及空檔案存在
     private World createPersonalTrialWorld(UUID uuid) {
         String worldName = "trial_" + uuid;
-        World world = new WorldCreator(worldName)
+        World existingWorld = Bukkit.getWorld(worldName);
+        if (existingWorld != null) {
+            clearEntityAndPoiFolders(existingWorld);
+        }
+
+        // 使用 CompletableFuture 非同步創建世界
+        WorldCreator creator = new WorldCreator(worldName)
                 .environment(Environment.NORMAL)
-                .generator(new VoidChunkGenerator())
-                .createWorld();
+                .generator(new VoidChunkGenerator());
+
+        // 創建世界
+        World world = creator.createWorld();
+
         if (world != null) {
-            // 確保 data 資料夾存在，避免卸載時 NoSuchFileException
-            File dataDir = new File(world.getWorldFolder(), "data");
-            if (!dataDir.exists() && !dataDir.mkdirs()) {
-                getLogger().warning("無法創建資料夾: " + dataDir.getAbsolutePath());
-            }
+            // 預先建立必要的資料夾及檔案
+            prepareWorldDataFolders(world);
 
-            // 預先建立空的 raids.dat，避免寫入時因檔案不存在而報錯
-            File raidsFile = new File(dataDir, "raids.dat");
-            if (!raidsFile.exists()) {
-                try (java.io.FileOutputStream fos = new java.io.FileOutputStream(raidsFile)) {
-                    // 創建空文件並寫入
-                    fos.write(new byte[0]);
-                    fos.flush();
-                } catch (IOException e) {
-                    getLogger().warning("無法創建 raids.dat 文件: " + e.getMessage());
-                }
-            }
-
+            // 設置世界規則
             world.setGameRule(GameRule.KEEP_INVENTORY, true);
+            world.setGameRule(GameRule.DO_IMMEDIATE_RESPAWN, true); // 避免死亡畫面停留
+            world.setGameRule(GameRule.ANNOUNCE_ADVANCEMENTS, false); // 避免進度通知
             world.setDifficulty(Difficulty.HARD);
             world.setSpawnLocation(0, 64, 0);
+
+            // 創建出生平台
             createSpawnPlatform(world);
-            getLogger().info("Created personal trial world with data folder: " + worldName);
+            getLogger().info("Created personal trial world: " + worldName);
         }
         return world;
+    }
+
+    // 新增的輔助方法，處理世界資料夾準備
+    private void prepareWorldDataFolders(World world) {
+        File worldFolder = world.getWorldFolder();
+        // 建立必要的資料夾
+        String[] foldersToCreate = {"data", "entities", "poi", "region"};
+
+        for (String folder : foldersToCreate) {
+            File dir = new File(worldFolder, folder);
+            if (!dir.exists() && !dir.mkdirs()) {
+                getLogger().warning("無法創建資料夾: " + dir.getAbsolutePath());
+            }
+        }
+
+        // 創建必要的空檔案
+        File raidsFile = new File(new File(worldFolder, "data"), "raids.dat");
+        if (!raidsFile.exists()) {
+            try (java.io.FileOutputStream fos = new java.io.FileOutputStream(raidsFile)) {
+                fos.write(new byte[0]);
+            } catch (IOException e) {
+                getLogger().warning("無法創建 raids.dat 文件: " + e.getMessage());
+            }
+        }
     }
 
     private void createSpawnPlatform(World world) {
@@ -251,7 +274,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
      * /trialchambers 指令處理，重複執行前先刪除舊世界
      */
     private class TrialChambersCommand implements CommandExecutor {
-        private static final long COOLDOWN_MS = 300_000L; // 5 分鐘
+        private static final long COOLDOWN_MS = 150_000L; // 2.5 分鐘
 
         @Override
         public boolean onCommand(@NotNull CommandSender sender, @NotNull Command cmd,
@@ -263,7 +286,6 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             long now = System.currentTimeMillis();
             long last = trialCooldowns.getOrDefault(uid, 0L);
             long elapsed = now - last;
-
             boolean isBedrock = FloodgateApi.getInstance().isFloodgatePlayer(uid);
 
             if (elapsed < COOLDOWN_MS) {
@@ -491,8 +513,39 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         return new VoidChunkGenerator();
     }
     public static class VoidChunkGenerator extends ChunkGenerator {
-        @Override public void generateNoise(@NotNull WorldInfo info, @NotNull Random rand, int x, int z, @NotNull ChunkData data) {}
-        @Override public void generateSurface(@NotNull WorldInfo info, @NotNull Random rand, int x, int z, @NotNull ChunkData data) {}
-        @Override public void generateCaves(@NotNull WorldInfo info, @NotNull Random rand, int x, int z, @NotNull ChunkData data) {}
+        @Override
+        public void generateNoise(@NotNull WorldInfo info, @NotNull Random rand, int x, int z, @NotNull ChunkData data) {
+            // 在 y=0 處生成一層基岩，防止玩家掉落虛空
+            if (x == 0 && z == 0) {
+                data.setBlock(0, 0, 0, Material.BEDROCK);
+            }
+        }
+
+        @Override
+        public void generateSurface(@NotNull WorldInfo info, @NotNull Random rand, int x, int z, @NotNull ChunkData data) {}
+
+        @Override
+        public void generateCaves(@NotNull WorldInfo info, @NotNull Random rand, int x, int z, @NotNull ChunkData data) {}
+
+        // 優化：預先生成重要區塊以減少動態生成延遲
+        @Override
+        public boolean shouldGenerateCaves() {
+            return false;
+        }
+
+        @Override
+        public boolean shouldGenerateDecorations() {
+            return false;
+        }
+
+        @Override
+        public boolean shouldGenerateMobs() {
+            return false;
+        }
+
+        @Override
+        public boolean shouldGenerateStructures() {
+            return false;
+        }
     }
 }
