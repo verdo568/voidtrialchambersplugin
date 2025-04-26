@@ -26,6 +26,8 @@ import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
 import org.geysermc.floodgate.api.FloodgateApi;
 import org.jetbrains.annotations.NotNull;
+import org.bukkit.Difficulty;
+
 
 import java.io.File;
 import java.io.IOException;
@@ -112,6 +114,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             }
 
             world.setGameRule(GameRule.KEEP_INVENTORY, true);
+            world.setDifficulty(Difficulty.HARD);
             world.setSpawnLocation(0, 64, 0);
             createSpawnPlatform(world);
             getLogger().info("Created personal trial world with data folder: " + worldName);
