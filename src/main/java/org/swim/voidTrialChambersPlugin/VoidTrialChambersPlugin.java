@@ -45,7 +45,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
     // 玩家難度映射
     private final Map<UUID, TrialDifficulty> playerDifficulties = new HashMap<>();
     // MobSpawner 任務映射
-    private final Map<UUID, MobSpawnerTask> spawnerTasks = new HashMap<>();
+    private final Map<UUID, WorldMobSpawnerTask> spawnerTasks = new HashMap<>();
     // 排除處理的世界名單
     private List<String> excludedWorldNames;
     // 試煉世界冷卻時間
@@ -105,7 +105,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
     @Override
     public void onDisable() {
         // 停止所有 Spawner 任務
-        spawnerTasks.values().forEach(MobSpawnerTask::stop);
+        spawnerTasks.values().forEach(WorldMobSpawnerTask::stop);
         // 先複製一份要處理的世界列表，避免迭代時並發修改
         for (World w : new ArrayList<>(playerTrialWorlds.values())) {
             // 如果世界裡有玩家，就逐一踢出
@@ -168,161 +168,105 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         }
     }
 
-    /**
-     * MobSpawnerTask: 定時隨機在玩家後方及周圍生成怪物
-     */
-    private class MobSpawnerTask {
-        private final Player player;
+    private class WorldMobSpawnerTask {
+        private final World world;
         private final TrialDifficulty diff;
-        private BukkitTask task;
         private final Random rnd = new Random();
+        private BukkitTask task;
+        private static final int MAX_ACTIVE_MOBS = 500;
 
-        public MobSpawnerTask(UUID uid, World world, Player player, TrialDifficulty diff) {
-            this.player = player;
-            this.diff = diff;
+        public WorldMobSpawnerTask(World world, TrialDifficulty diff) {
+            this.world = world;
+            this.diff  = diff;
         }
 
         public void start() {
-            scheduleNext();
-        }
-
-        private void scheduleNext() {
-            int delaySec;
-            if (diff == TrialDifficulty.HARD) {
-                delaySec = rnd.nextInt(3) + 3; // 3~5 秒
-            } else {
-                delaySec = rnd.nextInt(6) + 5; // 5~10 秒
-            }
+            // 立刻執行一次，之後每 [3~5] 秒重複
             task = new BukkitRunnable() {
                 @Override
                 public void run() {
                     spawnWave();
-                    scheduleNext();
                 }
-            }.runTaskLater(VoidTrialChambersPlugin.this, delaySec * 20L);
+            }.runTaskTimer(VoidTrialChambersPlugin.this, 0L, (rnd.nextInt(3) + 3) * 20L);
         }
-
-        /**
-         * 檢查生成位置安全性：
-         * - 底下必須有實心方塊，避免掉落
-         * - 本體及頭頂及周圍 1 格範圍內都必須是空氣，避免窒息
-         */
-        private boolean isSafeSpawnLocation(Location loc) {
-            // 檢查底下方塊
-            Block below = loc.clone().add(0, -1, 0).getBlock();
-            if (below.getType() == Material.AIR || !below.getType().isSolid()) {
-                return false;
-            }
-            // 檢查本體、頭頂及周圍 1 格範圍的方塊都是空氣
-            for (int dx = -1; dx <= 1; dx++) {
-                for (int dz = -1; dz <= 1; dz++) {
-                    for (int dy = 0; dy <= 1; dy++) {
-                        Block check = loc.clone().add(dx, dy, dz).getBlock();
-                        if (check.getType() != Material.AIR) {
-                            return false;
-                        }
-                    }
-                }
-            }
-            return true;
-        }
-
-        // 類別最上方定義全局活躍怪物上限
-        private static final int MAX_ACTIVE_MOBS = 500;
 
         private void spawnWave() {
-            World w = player.getWorld();
-            // 如果世界名不是以 "trial_" 开头，就直接跳过
-            if (!w.getName().startsWith("trial_")) {
-                return;
-            }
-            // 先計算目前世界中，指定要生成的怪物類型，還有玩家放置的傳送點等不算玩家、載具...
-            long currentCount = w.getEntities().stream()
-                    // 只算 LivingEntity，且排除玩家與動物等必要分類，你可根據需要再加過濾
+            if (!world.getName().startsWith("trial_")) return;
+
+            // 計算世界中目前的目標怪物數量
+            long current = world.getEntities().stream()
                     .filter(e -> e instanceof LivingEntity)
-                    .filter(e -> {
-                        EntityType t = e.getType();
-                        // 只計算我們會 spawn 的怪物類型
-                        return diff.getMobs().contains(t);
-                    })
+                    .filter(e -> diff.getMobs().contains(e.getType()))
                     .count();
+            if (current >= MAX_ACTIVE_MOBS) return;
 
-            // 如果已經達到上限，就不 spawn 任何新的
-            if (currentCount >= MAX_ACTIVE_MOBS) {
-                return;
+            // 計算本波要刷多少
+            int desired = diff == TrialDifficulty.HARD
+                    ? rnd.nextInt(4) + 7   // 7–10
+                    : rnd.nextInt(3) + 4;  // 4–6
+            int toSpawn = Math.min(desired, MAX_ACTIVE_MOBS - (int)current);
+
+            List<Player> players = world.getPlayers();
+            if (players.isEmpty()) return;
+
+            int perPlayer = Math.max(1, toSpawn / players.size());
+            for (Player p : players) {
+                spawnAroundPlayer(p, perPlayer);
             }
+        }
 
-            // 原先依照難度計算每波應生成的數量
-            int desired = switch (diff) {
-                case NORMAL -> rnd.nextInt(3) + 4; // 4–6
-                case HARD -> rnd.nextInt(4) + 7; // 7–10
-                default     -> 0;
-            };
-
-            // 計算還能生成幾隻：上限減去當前數量
-            int availableSlots = (int)(MAX_ACTIVE_MOBS - currentCount);
-            // 最終的生成目標數量不能超過 availableSlots
-            int count = Math.min(desired, availableSlots);
-
-            Location base = player.getLocation();
+        private void spawnAroundPlayer(Player p, int count) {
             List<EntityType> types = diff.getMobs();
+            int spawned = 0, tries = 0, maxTries = count * 5;
+            Location base = p.getLocation();
 
-            int spawned = 0;
-            int attempts = 0;
-            int maxAttempts = count * 5;
-
-            while (spawned < count && attempts < maxAttempts) {
-                attempts++;
-                double angle = Math.toRadians(rnd.nextDouble() * 360);
+            while (spawned < count && tries++ < maxTries) {
+                double angle    = Math.toRadians(rnd.nextDouble() * 360);
                 double distance = rnd.nextDouble() * 2 + 3;
-                Location spawnLoc = base.clone().add(
+                Location loc = base.clone().add(
                         Math.cos(angle) * distance,
                         0,
                         Math.sin(angle) * distance
                 );
 
-                // —— 保留你原本「跳過靠近原生床」的邏輯 ——
-                boolean nearVanillaBed = false;
-                for (int dx = -8; dx <= 8 && !nearVanillaBed; dx++) {
-                    for (int dz = -8; dz <= 8; dz++) {
-                        if (dx*dx + dz*dz > 64) continue;
-                        Block b = w.getBlockAt(
-                                spawnLoc.getBlockX() + dx,
-                                spawnLoc.getBlockY(),
-                                spawnLoc.getBlockZ() + dz
-                        );
-                        if (b.getState() instanceof Bed
-                                && !playerPlacedBeds.contains(b.getLocation())) {
-                            nearVanillaBed = true;
-                            break;
-                        }
-                    }
-                }
-                if (nearVanillaBed) {
-                    continue;
-                }
-                // —— 結束原生床檢查 ——
+                if (!isSafeSpawnLocation(loc) || isNearVanillaBed(loc)) continue;
 
-                // 安全位置微調
-                int upTries = 0;
-                while (!isSafeSpawnLocation(spawnLoc) && upTries < 5) {
-                    spawnLoc.add(0, 1, 0);
-                    upTries++;
-                }
-                if (isSafeSpawnLocation(spawnLoc)) {
-                    EntityType type = types.get(rnd.nextInt(types.size()));
-                    LivingEntity e = (LivingEntity) w.spawnEntity(spawnLoc, type);
-                    e.setCustomNameVisible(false);
-                    spawned++;
-                }
+                EntityType type = types.get(rnd.nextInt(types.size()));
+                world.spawnEntity(loc, type)
+                        .setCustomNameVisible(false);
+                spawned++;
             }
         }
 
+        private boolean isSafeSpawnLocation(Location loc) {
+            Block below = loc.clone().add(0, -1, 0).getBlock();
+            if (!below.getType().isSolid()) return false;
+            for (int dx=-1; dx<=1; dx++) for (int dz=-1; dz<=1; dz++)
+                for (int dy=0; dy<=1; dy++) {
+                    if (loc.clone().add(dx, dy, dz).getBlock().getType() != Material.AIR)
+                        return false;
+                }
+            return true;
+        }
+
+        private boolean isNearVanillaBed(Location loc) {
+            World w = loc.getWorld();
+            for (int dx=-8; dx<=8; dx++) for (int dz=-8; dz<=8; dz++) {
+                if (dx*dx+dz*dz > 64) continue;
+                Block b = w.getBlockAt(
+                        loc.getBlockX()+dx, loc.getBlockY(), loc.getBlockZ()+dz
+                );
+                if (b.getState() instanceof Bed && !playerPlacedBeds.contains(b.getLocation()))
+                    return true;
+            }
+            return false;
+        }
 
         public void stop() {
             if (task != null) task.cancel();
         }
     }
+
 
     // 建立個人試煉世界並確保 data 資料夾及空檔案存在
     private World createPersonalTrialWorld(UUID uuid) {
@@ -504,7 +448,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
 
                     if (ownerUUID != null) {
                         // 停止相關的任務
-                        MobSpawnerTask task = spawnerTasks.remove(ownerUUID);
+                        WorldMobSpawnerTask task = spawnerTasks.remove(ownerUUID);
                         if (task != null) {
                             task.stop();
                         }
@@ -741,7 +685,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             playerTrialWorlds.put(uid, personal);
             // 記錄難度並啟動刷怪任務
             playerDifficulties.put(uid, diff);
-            MobSpawnerTask spawner = new MobSpawnerTask(uid, personal, player, diff);
+            WorldMobSpawnerTask spawner = new WorldMobSpawnerTask(personal, diff);
             spawnerTasks.put(uid, spawner);
             spawner.start();
 
@@ -891,7 +835,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             }
             UUID uid = p.getUniqueId();
             // —— 修复：先取出再判空 ——
-            MobSpawnerTask spawner = spawnerTasks.remove(uid);
+            WorldMobSpawnerTask  spawner = spawnerTasks.remove(uid);
             if (spawner != null) {
                 spawner.stop();
             }
