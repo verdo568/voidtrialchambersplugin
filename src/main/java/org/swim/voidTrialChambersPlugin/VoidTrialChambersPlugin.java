@@ -98,7 +98,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
                         }
                     }
                 }
-            }.runTaskTimer(plugin, 0L, 900L); // 每45秒執行一次
+            }.runTaskTimer(plugin, 0L, 1200L);
         }
     }
 
