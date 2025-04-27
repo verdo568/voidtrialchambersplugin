@@ -143,7 +143,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
     public enum TrialDifficulty {
         EASY("簡單"),
         NORMAL("普通"),
-        HARD("困難");
+        HARD("地獄");
 
         private final String display;
         TrialDifficulty(String display) { this.display = display; }
@@ -720,7 +720,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
 
             String input = args.length>0? args[0] : "普通";
             TrialDifficulty diff = TrialDifficulty.from(input);
-            if (diff == null) { player.sendMessage("§c無效難度，請輸入 簡單/普通/困難"); return true; }
+            if (diff == null) { player.sendMessage("§c無效難度，請輸入 簡單/普通/地獄"); return true; }
 
             // 刪除舊試煉世界
             World oldWorld = playerTrialWorlds.remove(uid);
@@ -801,7 +801,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         @Override
         public List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command command, @NotNull String alias, String[] args) {
             if (args.length == 1) {
-                List<String> options = Arrays.asList("困難", "普通", "簡單");
+                List<String> options = Arrays.asList("地獄", "普通", "簡單");
                 String input = args[0];
                 List<String> completions = new ArrayList<>();
                 for (String option : options) {
