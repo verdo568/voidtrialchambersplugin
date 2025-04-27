@@ -107,7 +107,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
 
         public List<EntityType> getMobs() {
             return switch (this) {
-                case NORMAL -> List.of(EntityType.ZOMBIE, EntityType.SKELETON);
+                case NORMAL -> List.of(EntityType.ZOMBIE, EntityType.SKELETON, EntityType.SPIDER);
                 case HARD   -> List.of(EntityType.ZOMBIE, EntityType.SKELETON, EntityType.CREEPER, EntityType.SPIDER, EntityType.ENDERMAN, EntityType.WITCH, EntityType.SLIME);
                 default     -> List.of();
             };
@@ -135,7 +135,12 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         }
 
         private void scheduleNext() {
-            int delaySec = rnd.nextInt(8) + 3; // 3~10秒
+            int delaySec;
+            if (diff == TrialDifficulty.HARD) {
+                delaySec = rnd.nextInt(3) + 3; // 3~5 秒
+            } else {
+                delaySec = rnd.nextInt(6) + 3; // 3~8 秒
+            }
             task = new BukkitRunnable() {
                 @Override
                 public void run() {
@@ -145,39 +150,67 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             }.runTaskLater(VoidTrialChambersPlugin.this, delaySec * 20L);
         }
 
+        /**
+         * 檢查生成位置安全性：
+         * - 底下必須有實心方塊，避免掉落
+         * - 本體及頭頂及周圍 1 格範圍內都必須是空氣，避免窒息
+         */
         private boolean isSafeSpawnLocation(Location loc) {
-            // 檢查當前區塊以及頭頂一格是否為空氣(假設空氣代表沒有障礙物)
-            // 如果需要更精細的條件可以根據需求修改
-            Block blockAtLoc = loc.getBlock();
-            Block blockAbove = loc.clone().add(0, 1, 0).getBlock();
-            return blockAtLoc.getType() == Material.AIR && blockAbove.getType() == Material.AIR;
+            // 檢查底下方塊
+            Block below = loc.clone().add(0, -1, 0).getBlock();
+            if (below.getType() == Material.AIR || !below.getType().isSolid()) {
+                return false;
+            }
+            // 檢查本體、頭頂及周圍 1 格範圍的方塊都是空氣
+            for (int dx = -1; dx <= 1; dx++) {
+                for (int dz = -1; dz <= 1; dz++) {
+                    for (int dy = 0; dy <= 1; dy++) {
+                        Block check = loc.clone().add(dx, dy, dz).getBlock();
+                        if (check.getType() != Material.AIR) {
+                            return false;
+                        }
+                    }
+                }
+            }
+            return true;
         }
 
         private void spawnWave() {
-            int count = switch(diff) {
-                case NORMAL -> rnd.nextInt(3) + 2; // 2~4
-                case HARD   -> rnd.nextInt(4) + 3; // 3~6
+            int count = switch (diff) {
+                case NORMAL -> rnd.nextInt(3) + 4; // 4~6 隻怪物
+                case HARD   -> rnd.nextInt(4) + 5; // 5~8隻怪物
                 default     -> 0;
             };
-            Location loc = player.getLocation();
+            Location base = player.getLocation();
             List<EntityType> types = diff.getMobs();
-            for (int i = 0; i < count; i++) {
-                EntityType type = types.get(rnd.nextInt(types.size()));
-                double yaw = Math.toRadians(player.getLocation().getYaw());
-                double angle = yaw + Math.toRadians(rnd.nextInt(120) + 60);
+
+            int spawned = 0;
+            int attempts = 0;
+            int maxAttempts = count * 5;
+
+            while (spawned < count && attempts < maxAttempts) {
+                attempts++;
+                // 隨機全方位角度 0~360°
+                double angle = Math.toRadians(rnd.nextDouble() * 360);
+                // 距離仍可保留 3~5 (或 3~8)
                 double distance = rnd.nextDouble() * 2 + 3;
-                double x = loc.getX() + Math.cos(angle) * distance;
-                double y = loc.getY();
-                double z = loc.getZ() + Math.sin(angle) * distance;
-                Location spawnLoc = new Location(world, x, y, z);
+                Location spawnLoc = base.clone().add(
+                        Math.cos(angle) * distance,
+                        0,
+                        Math.sin(angle) * distance
+                );
 
-                // 如果生成位置不安全，可以嘗試調整位置，例如向上移動一格
-                if (!isSafeSpawnLocation(spawnLoc)) {
+                int upTries = 0;
+                while (!isSafeSpawnLocation(spawnLoc) && upTries < 5) {
                     spawnLoc.add(0, 1, 0);
+                    upTries++;
                 }
-
-                LivingEntity e = (LivingEntity) world.spawnEntity(spawnLoc, type);
-                e.setCustomNameVisible(false);
+                if (isSafeSpawnLocation(spawnLoc)) {
+                    EntityType type = types.get(rnd.nextInt(types.size()));
+                    LivingEntity e = (LivingEntity) world.spawnEntity(spawnLoc, type);
+                    e.setCustomNameVisible(false);
+                    spawned++;
+                }
             }
         }
 
@@ -436,7 +469,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
                 return true;
             }
 
-            String input = args.length>0? args[0] : "簡單";
+            String input = args.length>0? args[0] : "普通";
             TrialDifficulty diff = TrialDifficulty.from(input);
             if (diff == null) { player.sendMessage("§c無效難度，請輸入 簡單/普通/困難"); return true; }
 
@@ -516,7 +549,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             return true;
         }
         @Override
-        public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
+        public List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command command, @NotNull String alias, String[] args) {
             if (args.length == 1) {
                 List<String> options = Arrays.asList("困難", "普通", "簡單");
                 String input = args[0];
