@@ -806,24 +806,41 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         }
 
         private Location findNearestBed(Location center, World world) {
-            double best = Double.MAX_VALUE;
-            Location bestLoc = null;
+            // 使用螺旋搜索而非暴力搜索
             int cx = center.getBlockX(), cy = center.getBlockY(), cz = center.getBlockZ();
-            for (int x = cx - 100; x <= cx + 100; x++) {
-                for (int z = cz - 100; z <= cz + 100; z++) {
-                    for (int y = world.getMinHeight(); y <= Math.min(world.getMaxHeight(), cy + 100); y++) {
-                        Block b = world.getBlockAt(x, y, z);
-                        if (b.getState() instanceof Bed) {
-                            double dist = b.getLocation().distanceSquared(center);
-                            if (dist < best) {
-                                best = dist;
-                                bestLoc = b.getLocation().add(0.5, 1, 0.5);
+            int maxRadius = 100;
+            Location bestLoc = null;
+            double bestDistSq = Double.MAX_VALUE;
+
+            // 由近到遠搜索
+            for (int radius = 5; radius <= maxRadius; radius += 5) {
+                // 搜尋每個高度層
+                for (int y = Math.max(cy - radius, world.getMinHeight());
+                     y <= Math.min(cy + radius, world.getMaxHeight()); y++) {
+
+                    // 只搜索此半徑的外圈，避免重複
+                    for (int dx = -radius; dx <= radius; dx++) {
+                        for (int dz = -radius; dz <= radius; dz++) {
+                            // 只檢查邊緣
+                            if (Math.abs(dx) != radius && Math.abs(dz) != radius) continue;
+
+                            Block b = world.getBlockAt(cx + dx, y, cz + dz);
+                            if (b.getState() instanceof Bed) {
+                                double distSq = b.getLocation().distanceSquared(center);
+                                if (distSq < bestDistSq) {
+                                    bestDistSq = distSq;
+                                    bestLoc = b.getLocation().add(0.5, 1, 0.5);
+                                }
                             }
                         }
                     }
                 }
+
+                // 如果已經找到床，就提前返回
+                if (bestLoc != null) return bestLoc;
             }
-            return bestLoc;
+
+            return null;
         }
     }
 
