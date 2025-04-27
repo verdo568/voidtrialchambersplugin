@@ -97,6 +97,10 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
 
         private final String display;
         TrialDifficulty(String display) { this.display = display; }
+        /** 返回中文显示名 */
+        public String getDisplay() {
+            return display;
+        }
 
         public static TrialDifficulty from(String s) {
             for (TrialDifficulty d : values()) {
@@ -480,7 +484,8 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             }
 
             trialCooldowns.put(uid, now);
-            player.sendMessage("§6正在進入試煉世界，請稍候...");
+            TrialDifficulty ignored = playerDifficulties.get(uid);
+            player.sendMessage(Component.text("§6正在進入「" + diff.getDisplay() + "」難度的試煉世界，請稍候..."));
             originalLocations.put(uid, player.getLocation());
 
             World personal = createPersonalTrialWorld(uid);
