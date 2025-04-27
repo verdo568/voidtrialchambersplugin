@@ -162,7 +162,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         public List<EntityType> getMobs() {
             return switch (this) {
                 case NORMAL -> List.of(EntityType.ZOMBIE, EntityType.SKELETON, EntityType.SPIDER);
-                case HARD   -> List.of(EntityType.ZOMBIE, EntityType.SKELETON, EntityType.CREEPER, EntityType.SPIDER, EntityType.ENDERMAN, EntityType.WITCH, EntityType.BOGGED, EntityType.STRAY, EntityType.WITHER_SKELETON);
+                case HARD   -> List.of(EntityType.ZOMBIE, EntityType.CREEPER, EntityType.CREEPER, EntityType.ENDERMAN, EntityType.WITCH, EntityType.WITCH, EntityType.BOGGED, EntityType.STRAY, EntityType.WITHER_SKELETON,EntityType.CAVE_SPIDER,EntityType.CAVE_SPIDER,EntityType.ILLUSIONER,EntityType.PIGLIN_BRUTE,EntityType.HOGLIN);
                 default     -> List.of();
             };
         }
@@ -228,7 +228,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         }
 
         // 類別最上方定義全局活躍怪物上限
-        private static final int MAX_ACTIVE_MOBS = 100;
+        private static final int MAX_ACTIVE_MOBS = 500;
 
         private void spawnWave() {
             World w = player.getWorld();
@@ -255,7 +255,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             // 原先依照難度計算每波應生成的數量
             int desired = switch (diff) {
                 case NORMAL -> rnd.nextInt(3) + 4; // 4–6
-                case HARD   -> rnd.nextInt(4) + 5; // 5–8
+                case HARD -> rnd.nextInt(4) + 7; // 7–10
                 default     -> 0;
             };
 
