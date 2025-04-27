@@ -162,7 +162,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         public List<EntityType> getMobs() {
             return switch (this) {
                 case NORMAL -> List.of(EntityType.ZOMBIE, EntityType.SKELETON, EntityType.SPIDER);
-                case HARD   -> List.of(EntityType.ZOMBIE, EntityType.CREEPER, EntityType.CREEPER, EntityType.ENDERMAN, EntityType.WITCH, EntityType.WITCH, EntityType.BOGGED, EntityType.STRAY, EntityType.WITHER_SKELETON,EntityType.CAVE_SPIDER,EntityType.CAVE_SPIDER,EntityType.ILLUSIONER,EntityType.PIGLIN_BRUTE,EntityType.HOGLIN);
+                case HARD   -> List.of(EntityType.ZOMBIE, EntityType.CREEPER, EntityType.CREEPER, EntityType.ENDERMAN, EntityType.WITCH, EntityType.WITCH, EntityType.BOGGED, EntityType.STRAY, EntityType.EVOKER,EntityType.CAVE_SPIDER,EntityType.CAVE_SPIDER,EntityType.ILLUSIONER,EntityType.PIGLIN_BRUTE,EntityType.HOGLIN);
                 default     -> List.of();
             };
         }
@@ -311,8 +311,26 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
 
         // 如果離開的是試煉世界，檢查是否還有其他玩家
         if (from.getName().startsWith("trial_") && from.getPlayers().isEmpty()) {
-            // 標記最後訪問時間，但暫不清理
+            // 標記最後訪問時間
             updateWorldAccess(from);
+
+            // 找出這個世界的擁有者UUID
+            UUID ownerUUID = null;
+            for (Map.Entry<UUID, World> entry : new HashMap<>(playerTrialWorlds).entrySet()) {
+                if (entry.getValue().getName().equals(from.getName())) {
+                    ownerUUID = entry.getKey();
+                    break;
+                }
+            }
+
+            // 停止相關任務並清理資源
+            if (ownerUUID != null) {
+                stopAndCleanPlayerResources(ownerUUID);
+            }
+
+            // 清理和卸載世界
+            clearEntityAndPoiFolders(from);
+            worldLastAccessed.remove(from.getName());
         }
     }
 
@@ -427,90 +445,116 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
     private void cleanupUnusedResources() {
         long now = System.currentTimeMillis();
         int cleaned = 0;
+        List<String> worldsToClean = new ArrayList<>();
 
-        // 1. 清理長時間未訪問的世界
-        List<String> worldsToRemove = new ArrayList<>();
-        for (Map.Entry<String, Long> entry : worldLastAccessed.entrySet()) {
-            if (now - entry.getValue() > WORLD_RETENTION_TIME) {
-                String worldName = entry.getKey();
+        // 識別需要清理的世界
+        for (Map.Entry<String, Long> entry : new HashMap<>(worldLastAccessed).entrySet()) {
+            String worldName = entry.getKey();
+            long lastAccess = entry.getValue();
+
+            // 檢查是否超過保留時間
+            if (now - lastAccess > WORLD_RETENTION_TIME) {
                 World world = Bukkit.getWorld(worldName);
 
-                // 確保世界中沒有玩家
+                // 確保世界存在且沒有玩家
                 if (world != null && world.getPlayers().isEmpty()) {
-                    // 尋找對應的玩家UUID
-                    UUID ownerUUID = null;
-                    for (Map.Entry<UUID, World> worldEntry : playerTrialWorlds.entrySet()) {
-                        if (worldEntry.getValue().getName().equals(worldName)) {
-                            ownerUUID = worldEntry.getKey();
-                            break;
-                        }
-                    }
-
-                    if (ownerUUID != null) {
-                        // 停止相關的任務
-                        WorldMobSpawnerTask task = spawnerTasks.remove(ownerUUID);
-                        if (task != null) {
-                            task.stop();
-                        }
-
-                        // 從映射中移除
-                        playerTrialWorlds.remove(ownerUUID);
-                        playerDifficulties.remove(ownerUUID);
-                    }
-
-                    // 清理世界資料
-                    clearEntityAndPoiFolders(world);
-                    worldsToRemove.add(worldName);
-                    cleaned++;
+                    worldsToClean.add(worldName);
                 }
             }
         }
 
-        // 移除處理過的世界記錄
-        for (String worldName : worldsToRemove) {
-            worldLastAccessed.remove(worldName);
-        }
+        // 執行清理
+        for (String worldName : worldsToClean) {
+            World world = Bukkit.getWorld(worldName);
+            if (world == null) continue;
 
-        // 2. 清理離線玩家的床位置記錄
-        // 複製一份集合以避免並發修改異常
-        Set<Location> bedLocations = new HashSet<>(playerPlacedBeds);
-        for (Location bedLoc : bedLocations) {
-            World world = bedLoc.getWorld();
-            if (world == null || !world.getName().startsWith("trial_") ||
-                    !worldLastAccessed.containsKey(world.getName())) {
-                playerPlacedBeds.remove(bedLoc);
-                cleaned++;
+            // 找到世界對應的擁有者
+            UUID ownerUUID = null;
+            for (Map.Entry<UUID, World> entry : new HashMap<>(playerTrialWorlds).entrySet()) {
+                if (entry.getValue().getName().equals(worldName)) {
+                    ownerUUID = entry.getKey();
+                    break;
+                }
             }
+
+            // 停止相關任務並清理映射
+            if (ownerUUID != null) {
+                stopAndCleanPlayerResources(ownerUUID);
+            }
+
+            // 清理世界資料
+            getLogger().info("正在清理未使用的試煉世界: " + worldName);
+            clearEntityAndPoiFolders(world);
+            worldLastAccessed.remove(worldName);
+            cleaned++;
         }
 
-        // 3. 清理離線玩家的冷卻記錄
+        // 清理離線玩家的資源
+        cleanupOfflinePlayerResources();
+
+        if (cleaned > 0) {
+            getLogger().info("記憶體清理完成: 釋放了 " + cleaned + " 個世界資源");
+        }
+    }
+
+    // 新增輔助方法，處理停止和清理單個玩家的所有資源
+    private void stopAndCleanPlayerResources(UUID playerUUID) {
+        // 停止刷怪任務
+        WorldMobSpawnerTask task = spawnerTasks.remove(playerUUID);
+        if (task != null) {
+            task.stop();
+        }
+
+        // 移除世界映射
+        playerTrialWorlds.remove(playerUUID);
+        playerDifficulties.remove(playerUUID);
+
+        // 清理冷卻相關資源
+        BukkitTask cooldownTask = cooldownTasks.remove(playerUUID);
+        if (cooldownTask != null) {
+            cooldownTask.cancel();
+        }
+
+        BossBar bar = cooldownBars.remove(playerUUID);
+        if (bar != null) {
+            bar.removeAll();
+        }
+    }
+
+    // 清理離線玩家的資源
+    private void cleanupOfflinePlayerResources() {
+        int cleaned = 0;
         List<UUID> offlinePlayers = new ArrayList<>();
-        for (UUID uuid : trialCooldowns.keySet()) {
+
+        // 識別離線玩家
+        for (UUID uuid : new HashSet<>(trialCooldowns.keySet())) {
             Player player = Bukkit.getPlayer(uuid);
             if (player == null || !player.isOnline()) {
                 offlinePlayers.add(uuid);
             }
         }
 
+        // 清理資源
         for (UUID uuid : offlinePlayers) {
             trialCooldowns.remove(uuid);
-
-            // 同時取消相關的冷卻任務和進度條
-            BukkitTask task = cooldownTasks.remove(uuid);
-            if (task != null) {
-                task.cancel();
-            }
-
-            BossBar bar = cooldownBars.remove(uuid);
-            if (bar != null) {
-                bar.removeAll();
-            }
-
+            stopAndCleanPlayerResources(uuid);
             cleaned++;
         }
 
+        // 清理玩家放置的床記錄
+        Iterator<Location> bedIterator = playerPlacedBeds.iterator();
+        while (bedIterator.hasNext()) {
+            Location bedLoc = bedIterator.next();
+            World world = bedLoc.getWorld();
+            if (world == null || !world.getName().startsWith("trial_") ||
+                    !worldLastAccessed.containsKey(world.getName())) {
+                bedIterator.remove();  // 正確的移除方式
+                cleaned++;
+            }
+        }
+
         if (cleaned > 0) {
-            getLogger().info("記憶體清理完成: 釋放了 " + cleaned + " 個資源");
+            getLogger().info("已清理 " + cleaned + " 個離線玩家資源");
         }
     }
 
