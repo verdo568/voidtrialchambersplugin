@@ -19,6 +19,8 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
+import org.bukkit.event.player.PlayerChangedWorldEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.event.world.PortalCreateEvent;
 import org.bukkit.generator.ChunkGenerator;
@@ -56,6 +58,10 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
     private final Map<UUID, BukkitTask> cooldownTasks = new HashMap<>();
     // 玩家放置的床
     private final Set<Location> playerPlacedBeds = new HashSet<>();
+    // 新增：世界最後訪問時間
+    private final Map<String, Long> worldLastAccessed = new HashMap<>();
+    // 世界保留時間（毫秒）
+    private static final long WORLD_RETENTION_TIME = 15 * 60 * 1000; // 15分鐘
 
     @Override
     public void onEnable() {
@@ -67,7 +73,14 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         TrialChambersCommand trialCmd = new TrialChambersCommand();
         Objects.requireNonNull(getCommand("trialchambers")).setExecutor(new TrialChambersCommand());
         Objects.requireNonNull(getCommand("exittrial")).setExecutor(new ExitTrialCommand());
-
+        // 註冊定期清理任務，每5分鐘執行一次
+        new BukkitRunnable() {
+            @Override
+            public void run() {
+                cleanupUnusedResources();
+            }
+        }.runTaskTimer(this, 6000L, 6000L); // 初次延遲5分鐘，之後每5分鐘執行一次
+        getLogger().info("記憶體清理任務已啟用");
         getLogger().info("Void Trial Chambers Plugin 已啟用");
     }
 
@@ -87,8 +100,26 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             // 然後再清空 entities、poi、region 等資料夾
             clearEntityAndPoiFolders(w);
         }
+        // 清理所有記錄的資料結構
+        playerPlacedBeds.clear();
+        worldLastAccessed.clear();
+        trialCooldowns.clear();
+        originalLocations.clear();
+        playerDifficulties.clear();
+        // 取消所有進度條和任務
+        for (BossBar bar : cooldownBars.values()) {
+            bar.removeAll();
+        }
+        cooldownBars.clear();
+
+        for (BukkitTask task : cooldownTasks.values()) {
+            task.cancel();
+        }
+        cooldownTasks.clear();
+
         getLogger().info("Void Trial Chambers Plugin 已停用");
     }
+
     /**
      * Difficulty enum 定義刷怪列表
      */
@@ -273,7 +304,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         if (world != null) {
             // 預先建立必要的資料夾及檔案
             prepareWorldDataFolders(world);
-
+            updateWorldAccess(world);
             // 設置世界規則
             world.setGameRule(GameRule.KEEP_INVENTORY, true);
             world.setGameRule(GameRule.ANNOUNCE_ADVANCEMENTS, false); // 避免進度通知
@@ -285,6 +316,21 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             getLogger().info("Created personal trial world: " + worldName);
         }
         return world;
+    }
+    // 新增玩家進入/離開世界事件處理
+    @EventHandler
+    public void onPlayerChangedWorld(PlayerChangedWorldEvent event) {
+        World from = event.getFrom();
+        World to = event.getPlayer().getWorld();
+
+        // 更新目標世界的訪問時間
+        updateWorldAccess(to);
+
+        // 如果離開的是試煉世界，檢查是否還有其他玩家
+        if (from.getName().startsWith("trial_") && from.getPlayers().isEmpty()) {
+            // 標記最後訪問時間，但暫不清理
+            updateWorldAccess(from);
+        }
     }
 
     // 新增的輔助方法，處理世界資料夾準備
@@ -310,7 +356,33 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             }
         }
     }
+    @EventHandler
+    public void onPlayerQuit(PlayerQuitEvent event) {
+        Player player = event.getPlayer();
+        UUID uuid = player.getUniqueId();
 
+        // 如果玩家在試煉世界中登出
+        World world = player.getWorld();
+        if (world.getName().startsWith("trial_")) {
+            // 標記世界最後訪問時間
+            updateWorldAccess(world);
+
+            // 可選：立即清理資源
+            // 或者讓定期任務處理
+        }
+
+        // 清理冷卻進度條
+        BossBar bar = cooldownBars.remove(uuid);
+        if (bar != null) {
+            bar.removeAll();
+        }
+
+        // 取消相關任務
+        BukkitTask task = cooldownTasks.remove(uuid);
+        if (task != null) {
+            task.cancel();
+        }
+    }
     private void createSpawnPlatform(World world) {
         Location spawn = world.getSpawnLocation();
         int baseY = spawn.getBlockY() - 1;
@@ -363,6 +435,107 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
                     getLogger().warning("清理資料夾內容時出錯 " + directory + ": " + e.getMessage());
                 }
             }
+        }
+    }
+    /**
+     * 清理未使用的資源
+     */
+    private void cleanupUnusedResources() {
+        long now = System.currentTimeMillis();
+        int cleaned = 0;
+
+        // 1. 清理長時間未訪問的世界
+        List<String> worldsToRemove = new ArrayList<>();
+        for (Map.Entry<String, Long> entry : worldLastAccessed.entrySet()) {
+            if (now - entry.getValue() > WORLD_RETENTION_TIME) {
+                String worldName = entry.getKey();
+                World world = Bukkit.getWorld(worldName);
+
+                // 確保世界中沒有玩家
+                if (world != null && world.getPlayers().isEmpty()) {
+                    // 尋找對應的玩家UUID
+                    UUID ownerUUID = null;
+                    for (Map.Entry<UUID, World> worldEntry : playerTrialWorlds.entrySet()) {
+                        if (worldEntry.getValue().getName().equals(worldName)) {
+                            ownerUUID = worldEntry.getKey();
+                            break;
+                        }
+                    }
+
+                    if (ownerUUID != null) {
+                        // 停止相關的任務
+                        MobSpawnerTask task = spawnerTasks.remove(ownerUUID);
+                        if (task != null) {
+                            task.stop();
+                        }
+
+                        // 從映射中移除
+                        playerTrialWorlds.remove(ownerUUID);
+                        playerDifficulties.remove(ownerUUID);
+                    }
+
+                    // 清理世界資料
+                    clearEntityAndPoiFolders(world);
+                    worldsToRemove.add(worldName);
+                    cleaned++;
+                }
+            }
+        }
+
+        // 移除處理過的世界記錄
+        for (String worldName : worldsToRemove) {
+            worldLastAccessed.remove(worldName);
+        }
+
+        // 2. 清理離線玩家的床位置記錄
+        // 複製一份集合以避免並發修改異常
+        Set<Location> bedLocations = new HashSet<>(playerPlacedBeds);
+        for (Location bedLoc : bedLocations) {
+            World world = bedLoc.getWorld();
+            if (world == null || !world.getName().startsWith("trial_") ||
+                    !worldLastAccessed.containsKey(world.getName())) {
+                playerPlacedBeds.remove(bedLoc);
+                cleaned++;
+            }
+        }
+
+        // 3. 清理離線玩家的冷卻記錄
+        List<UUID> offlinePlayers = new ArrayList<>();
+        for (UUID uuid : trialCooldowns.keySet()) {
+            Player player = Bukkit.getPlayer(uuid);
+            if (player == null || !player.isOnline()) {
+                offlinePlayers.add(uuid);
+            }
+        }
+
+        for (UUID uuid : offlinePlayers) {
+            trialCooldowns.remove(uuid);
+
+            // 同時取消相關的冷卻任務和進度條
+            BukkitTask task = cooldownTasks.remove(uuid);
+            if (task != null) {
+                task.cancel();
+            }
+
+            BossBar bar = cooldownBars.remove(uuid);
+            if (bar != null) {
+                bar.removeAll();
+            }
+
+            cleaned++;
+        }
+
+        if (cleaned > 0) {
+            getLogger().info("記憶體清理完成: 釋放了 " + cleaned + " 個資源");
+        }
+    }
+
+    /**
+     * 更新世界訪問時間戳記
+     */
+    public void updateWorldAccess(World world) {
+        if (world != null && world.getName().startsWith("trial_")) {
+            worldLastAccessed.put(world.getName(), System.currentTimeMillis());
         }
     }
     @EventHandler
