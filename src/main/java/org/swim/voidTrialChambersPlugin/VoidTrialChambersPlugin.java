@@ -677,9 +677,17 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
                 p.sendMessage("§6你已退出試煉並傳送至主世界");
             }
             UUID uid = p.getUniqueId();
-            spawnerTasks.remove(uid).stop();
+            // —— 修复：先取出再判空 ——
+            MobSpawnerTask spawner = spawnerTasks.remove(uid);
+            if (spawner != null) {
+                spawner.stop();
+            }
+
+            // —— 同理，对世界清理也判空 ——
             World w = playerTrialWorlds.remove(uid);
-            clearEntityAndPoiFolders(w);
+            if (w != null) {
+                clearEntityAndPoiFolders(w);
+            }
             return true;
         }
     }
