@@ -12,9 +12,7 @@ import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
-import org.bukkit.entity.EntityType;
-import org.bukkit.entity.LivingEntity;
-import org.bukkit.entity.Player;
+import org.bukkit.entity.*;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
@@ -68,8 +66,8 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         Bukkit.getPluginManager().registerEvents(this, this);
         saveDefaultConfig();
         reloadConfig();
+        MonsterCleaner.startCleaningTask(this);
         excludedWorldNames = getConfig().getStringList("excluded_worlds");
-
         TrialChambersCommand trialCmd = new TrialChambersCommand();
         Objects.requireNonNull(getCommand("trialchambers")).setExecutor(new TrialChambersCommand());
         Objects.requireNonNull(getCommand("exittrial")).setExecutor(new ExitTrialCommand());
@@ -82,6 +80,26 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         }.runTaskTimer(this, 6000L, 6000L); // 初次延遲5分鐘，之後每5分鐘執行一次
         getLogger().info("記憶體清理任務已啟用");
         getLogger().info("Void Trial Chambers Plugin 已啟用");
+    }
+
+    public static class MonsterCleaner {
+
+        public static void startCleaningTask(VoidTrialChambersPlugin plugin) {
+            new BukkitRunnable() {
+                @Override
+                public void run() {
+                    for (World world : Bukkit.getWorlds()) {
+                        if (world.getName().startsWith("trial_")) {
+                            for (Entity entity : world.getEntities()) {
+                                if (entity instanceof Monster) {
+                                    entity.remove();
+                                }
+                            }
+                        }
+                    }
+                }
+            }.runTaskTimer(plugin, 0L, 900L); // 每45秒執行一次
+        }
     }
 
     @Override
@@ -119,7 +137,6 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
 
         getLogger().info("Void Trial Chambers Plugin 已停用");
     }
-
     /**
      * Difficulty enum 定義刷怪列表
      */
@@ -145,7 +162,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         public List<EntityType> getMobs() {
             return switch (this) {
                 case NORMAL -> List.of(EntityType.ZOMBIE, EntityType.SKELETON, EntityType.SPIDER);
-                case HARD   -> List.of(EntityType.ZOMBIE, EntityType.SKELETON, EntityType.CREEPER, EntityType.SPIDER, EntityType.ENDERMAN, EntityType.WITCH, EntityType.SLIME, EntityType.BOGGED, EntityType.STRAY, EntityType.WITHER_SKELETON);
+                case HARD   -> List.of(EntityType.ZOMBIE, EntityType.SKELETON, EntityType.CREEPER, EntityType.SPIDER, EntityType.ENDERMAN, EntityType.WITCH, EntityType.BOGGED, EntityType.STRAY, EntityType.WITHER_SKELETON);
                 default     -> List.of();
             };
         }
@@ -156,13 +173,11 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
      */
     private class MobSpawnerTask {
         private final Player player;
-        private final World world;
         private final TrialDifficulty diff;
         private BukkitTask task;
         private final Random rnd = new Random();
 
         public MobSpawnerTask(UUID uid, World world, Player player, TrialDifficulty diff) {
-            this.world = world;
             this.player = player;
             this.diff = diff;
         }
@@ -212,12 +227,39 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             return true;
         }
 
+        // 類別最上方定義全局活躍怪物上限
+        private static final int MAX_ACTIVE_MOBS = 100;
+
         private void spawnWave() {
-            int count = switch (diff) {
-                case NORMAL -> rnd.nextInt(3) + 4;
-                case HARD   -> rnd.nextInt(4) + 5;
+            World w = player.getWorld();
+            // 先計算目前世界中，指定要生成的怪物類型，還有玩家放置的傳送點等不算玩家、載具...
+            long currentCount = w.getEntities().stream()
+                    // 只算 LivingEntity，且排除玩家與動物等必要分類，你可根據需要再加過濾
+                    .filter(e -> e instanceof LivingEntity)
+                    .filter(e -> {
+                        EntityType t = e.getType();
+                        // 只計算我們會 spawn 的怪物類型
+                        return diff.getMobs().contains(t);
+                    })
+                    .count();
+
+            // 如果已經達到上限，就不 spawn 任何新的
+            if (currentCount >= MAX_ACTIVE_MOBS) {
+                return;
+            }
+
+            // 原先依照難度計算每波應生成的數量
+            int desired = switch (diff) {
+                case NORMAL -> rnd.nextInt(3) + 4; // 4–6
+                case HARD   -> rnd.nextInt(4) + 5; // 5–8
                 default     -> 0;
             };
+
+            // 計算還能生成幾隻：上限減去當前數量
+            int availableSlots = (int)(MAX_ACTIVE_MOBS - currentCount);
+            // 最終的生成目標數量不能超過 availableSlots
+            int count = Math.min(desired, availableSlots);
+
             Location base = player.getLocation();
             List<EntityType> types = diff.getMobs();
 
@@ -227,44 +269,37 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
 
             while (spawned < count && attempts < maxAttempts) {
                 attempts++;
-                // 随机选点（和原来一样）
                 double angle = Math.toRadians(rnd.nextDouble() * 360);
-                double distance = rnd.nextDouble() * 2 + (3);
+                double distance = rnd.nextDouble() * 2 + 3;
                 Location spawnLoc = base.clone().add(
                         Math.cos(angle) * distance,
                         0,
                         Math.sin(angle) * distance
                 );
 
-                // —— 新增：如果 spawnLoc 周围 5 格内有“非玩家放置”的床，就跳过 ——
+                // —— 保留你原本「跳過靠近原生床」的邏輯 ——
                 boolean nearVanillaBed = false;
-                World w = spawnLoc.getWorld();
-                // 扫描以 spawnLoc 为中心，半径 5 内的所有床方块（只需检测 XZ 平面即可）
                 for (int dx = -8; dx <= 8 && !nearVanillaBed; dx++) {
                     for (int dz = -8; dz <= 8; dz++) {
-                        if (dx*dx + dz*dz > 64) continue; // 圆形范围
+                        if (dx*dx + dz*dz > 64) continue;
                         Block b = w.getBlockAt(
                                 spawnLoc.getBlockX() + dx,
                                 spawnLoc.getBlockY(),
                                 spawnLoc.getBlockZ() + dz
                         );
-                        if (b.getState() instanceof Bed) {
-                            Location bedLoc = b.getLocation();
-                            // 如果这张床**不**在玩家放置集合里，则视为结构/世界自带的床
-                            if (!playerPlacedBeds.contains(bedLoc)) {
-                                nearVanillaBed = true;
-                                break;
-                            }
+                        if (b.getState() instanceof Bed
+                                && !playerPlacedBeds.contains(b.getLocation())) {
+                            nearVanillaBed = true;
+                            break;
                         }
                     }
                 }
                 if (nearVanillaBed) {
-                    // 跳过本次 spawnLoc
                     continue;
                 }
-                // —— 新增结束 ——
+                // —— 結束原生床檢查 ——
 
-                // 下面是你原有的安全检测和实体生成逻辑
+                // 安全位置微調
                 int upTries = 0;
                 while (!isSafeSpawnLocation(spawnLoc) && upTries < 5) {
                     spawnLoc.add(0, 1, 0);
@@ -272,7 +307,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
                 }
                 if (isSafeSpawnLocation(spawnLoc)) {
                     EntityType type = types.get(rnd.nextInt(types.size()));
-                    LivingEntity e = (LivingEntity) world.spawnEntity(spawnLoc, type);
+                    LivingEntity e = (LivingEntity) w.spawnEntity(spawnLoc, type);
                     e.setCustomNameVisible(false);
                     spawned++;
                 }
@@ -393,6 +428,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             }
         }
     }
+
     /**
      * 清空指定世界的 entities 和 poi 資料夾內容
      * 使用 Java NIO Files API 清空指定世界的資料夾內容，但保留資料夾本身
