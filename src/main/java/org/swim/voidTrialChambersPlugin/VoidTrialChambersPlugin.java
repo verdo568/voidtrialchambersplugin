@@ -17,6 +17,7 @@ import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
+import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
@@ -54,6 +55,8 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
     private final Map<UUID, BossBar> cooldownBars = new HashMap<>();
     // 冷卻時間的任務
     private final Map<UUID, BukkitTask> cooldownTasks = new HashMap<>();
+    // 玩家放置的床
+    private final Set<Location> playerPlacedBeds = new HashSet<>();
 
     @Override
     public void onEnable() {
@@ -112,7 +115,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         public List<EntityType> getMobs() {
             return switch (this) {
                 case NORMAL -> List.of(EntityType.ZOMBIE, EntityType.SKELETON, EntityType.SPIDER);
-                case HARD   -> List.of(EntityType.ZOMBIE, EntityType.SKELETON, EntityType.CREEPER, EntityType.SPIDER, EntityType.ENDERMAN, EntityType.WITCH, EntityType.SLIME);
+                case HARD   -> List.of(EntityType.ZOMBIE, EntityType.SKELETON, EntityType.CREEPER, EntityType.SPIDER, EntityType.ENDERMAN, EntityType.WITCH, EntityType.SLIME, EntityType.BOGGED, EntityType.STRAY, EntityType.WITHER_SKELETON);
                 default     -> List.of();
             };
         }
@@ -143,7 +146,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             if (diff == TrialDifficulty.HARD) {
                 delaySec = rnd.nextInt(3) + 3; // 3~5 秒
             } else {
-                delaySec = rnd.nextInt(6) + 3; // 3~8 秒
+                delaySec = rnd.nextInt(6) + 5; // 5~10 秒
             }
             task = new BukkitRunnable() {
                 @Override
@@ -181,8 +184,8 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
 
         private void spawnWave() {
             int count = switch (diff) {
-                case NORMAL -> rnd.nextInt(3) + 4; // 4~6 隻怪物
-                case HARD   -> rnd.nextInt(4) + 5; // 5~8隻怪物
+                case NORMAL -> rnd.nextInt(3) + 4;
+                case HARD   -> rnd.nextInt(4) + 5;
                 default     -> 0;
             };
             Location base = player.getLocation();
@@ -194,16 +197,44 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
 
             while (spawned < count && attempts < maxAttempts) {
                 attempts++;
-                // 隨機全方位角度 0~360°
+                // 随机选点（和原来一样）
                 double angle = Math.toRadians(rnd.nextDouble() * 360);
-                // 距離仍可保留 3~5 (或 3~8)
-                double distance = rnd.nextDouble() * 2 + 3;
+                double distance = rnd.nextDouble() * 2 + (3);
                 Location spawnLoc = base.clone().add(
                         Math.cos(angle) * distance,
                         0,
                         Math.sin(angle) * distance
                 );
 
+                // —— 新增：如果 spawnLoc 周围 5 格内有“非玩家放置”的床，就跳过 ——
+                boolean nearVanillaBed = false;
+                World w = spawnLoc.getWorld();
+                // 扫描以 spawnLoc 为中心，半径 5 内的所有床方块（只需检测 XZ 平面即可）
+                for (int dx = -8; dx <= 8 && !nearVanillaBed; dx++) {
+                    for (int dz = -8; dz <= 8; dz++) {
+                        if (dx*dx + dz*dz > 64) continue; // 圆形范围
+                        Block b = w.getBlockAt(
+                                spawnLoc.getBlockX() + dx,
+                                spawnLoc.getBlockY(),
+                                spawnLoc.getBlockZ() + dz
+                        );
+                        if (b.getState() instanceof Bed) {
+                            Location bedLoc = b.getLocation();
+                            // 如果这张床**不**在玩家放置集合里，则视为结构/世界自带的床
+                            if (!playerPlacedBeds.contains(bedLoc)) {
+                                nearVanillaBed = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (nearVanillaBed) {
+                    // 跳过本次 spawnLoc
+                    continue;
+                }
+                // —— 新增结束 ——
+
+                // 下面是你原有的安全检测和实体生成逻辑
                 int upTries = 0;
                 while (!isSafeSpawnLocation(spawnLoc) && upTries < 5) {
                     spawnLoc.add(0, 1, 0);
@@ -217,6 +248,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
                 }
             }
         }
+
 
         public void stop() {
             if (task != null) task.cancel();
@@ -245,7 +277,6 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
 
             // 設置世界規則
             world.setGameRule(GameRule.KEEP_INVENTORY, true);
-            world.setGameRule(GameRule.DO_IMMEDIATE_RESPAWN, true); // 避免死亡畫面停留
             world.setGameRule(GameRule.ANNOUNCE_ADVANCEMENTS, false); // 避免進度通知
             world.setDifficulty(Difficulty.HARD);
             world.setSpawnLocation(0, 64, 0);
@@ -355,6 +386,17 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         }
     }
     @EventHandler
+    public void onBlockPlace(BlockPlaceEvent event) {
+        World world = event.getBlockPlaced().getWorld();
+        // 只在 trial_ 开头的世界里记录
+        if (!world.getName().startsWith("trial_")) return;
+
+        Block block = event.getBlockPlaced();
+        if (block.getState() instanceof Bed) {
+            playerPlacedBeds.add(block.getLocation());
+        }
+    }
+    @EventHandler
     public void onSignPlace(BlockPlaceEvent event) {
         Block block = event.getBlockPlaced();
         String worldName = block.getWorld().getName();
@@ -395,7 +437,17 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             );
         }
     }
+    @EventHandler
+    public void onBlockBreak(BlockBreakEvent event) {
+        World world = event.getBlock().getWorld();
+        // 只在 trial_ 开头的世界里移除
+        if (!world.getName().startsWith("trial_")) return;
 
+        Block block = event.getBlock();
+        if (block.getState() instanceof Bed) {
+            playerPlacedBeds.remove(block.getLocation());
+        }
+    }
     // 攔截任何形式的傳送門生成（保險起見）
     @EventHandler
     public void onPortalCreate(PortalCreateEvent event) {
