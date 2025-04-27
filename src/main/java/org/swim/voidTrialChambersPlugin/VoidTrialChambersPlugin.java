@@ -19,7 +19,6 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
-import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.event.world.PortalCreateEvent;
 import org.bukkit.generator.ChunkGenerator;
@@ -363,25 +362,6 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
                 } catch (IOException e) {
                     getLogger().warning("清理資料夾內容時出錯 " + directory + ": " + e.getMessage());
                 }
-            }
-        }
-    }
-
-    // 攔截 /tp 和 /teleport 指令
-    @EventHandler
-    public void onPlayerCommand(PlayerCommandPreprocessEvent event) {
-        Player player = event.getPlayer();
-        String worldName = player.getWorld().getName();
-
-        // 檢查是否在試煉世界，且不是 OP
-        if (worldName.startsWith("trial_") && !player.isOp()) {
-            String message = event.getMessage().toLowerCase();
-
-            // 檢查指令是否為 /tp 或 /teleport
-            if (message.startsWith("/tp ") || message.equals("/tp") ||
-                    message.startsWith("/teleport ") || message.equals("/teleport")) {
-                event.setCancelled(true);
-                player.sendMessage("§c此地禁止使用 /tp 指令！");
             }
         }
     }
