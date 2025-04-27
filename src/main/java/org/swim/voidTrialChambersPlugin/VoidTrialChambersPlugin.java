@@ -232,6 +232,10 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
 
         private void spawnWave() {
             World w = player.getWorld();
+            // 如果世界名不是以 "trial_" 开头，就直接跳过
+            if (!w.getName().startsWith("trial_")) {
+                return;
+            }
             // 先計算目前世界中，指定要生成的怪物類型，還有玩家放置的傳送點等不算玩家、載具...
             long currentCount = w.getEntities().stream()
                     // 只算 LivingEntity，且排除玩家與動物等必要分類，你可根據需要再加過濾
