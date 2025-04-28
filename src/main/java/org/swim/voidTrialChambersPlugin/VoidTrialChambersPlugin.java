@@ -17,6 +17,8 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
+import org.bukkit.event.entity.EntityDamageByEntityEvent;
+import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
@@ -28,6 +30,8 @@ import org.bukkit.potion.PotionEffectType;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
 import org.geysermc.floodgate.api.FloodgateApi;
+import org.bukkit.event.entity.EntityDeathEvent;
+import org.bukkit.entity.Monster;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.File;
@@ -60,6 +64,11 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
     private final Map<String, Long> worldLastAccessed = new HashMap<>();
     // 世界保留時間（毫秒）
     private static final long WORLD_RETENTION_TIME = 15 * 60 * 1000; // 15分鐘
+    //每個試煉世界當前的擊殺數
+    private final Map<String, Integer> worldKillCounts = new HashMap<>();
+    // 每個試煉世界的開始時間（毫秒）
+    private final Map<String, Long> worldStartTimes = new HashMap<>();
+
 
     @Override
     public void onEnable() {
@@ -98,7 +107,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
                         }
                     }
                 }
-            }.runTaskTimer(plugin, 0L, 1200L);
+            }.runTaskTimer(plugin, 0L, 3600L);
         }
     }
 
@@ -143,7 +152,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
     public enum TrialDifficulty {
         EASY("簡單"),
         NORMAL("普通"),
-        HARD("地獄");
+        HELL("地獄");
 
         private final String display;
         TrialDifficulty(String display) { this.display = display; }
@@ -162,7 +171,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         public List<EntityType> getMobs() {
             return switch (this) {
                 case NORMAL -> List.of(EntityType.ZOMBIE, EntityType.SKELETON, EntityType.SPIDER);
-                case HARD   -> List.of(EntityType.ZOMBIE, EntityType.CREEPER, EntityType.CREEPER, EntityType.ENDERMAN, EntityType.WITCH, EntityType.WITCH, EntityType.BOGGED, EntityType.STRAY, EntityType.EVOKER,EntityType.CAVE_SPIDER,EntityType.CAVE_SPIDER,EntityType.ILLUSIONER,EntityType.PIGLIN_BRUTE,EntityType.HOGLIN);
+                case HELL   -> List.of(EntityType.ZOMBIE, EntityType.CREEPER, EntityType.ENDERMAN, EntityType.WITCH, EntityType.BOGGED, EntityType.STRAY, EntityType.EVOKER,EntityType.CAVE_SPIDER,EntityType.CAVE_SPIDER,EntityType.ILLUSIONER,EntityType.PIGLIN_BRUTE);
                 default     -> List.of();
             };
         }
@@ -173,7 +182,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         private final TrialDifficulty diff;
         private final Random rnd = new Random();
         private BukkitTask task;
-        private static final int MAX_ACTIVE_MOBS = 500;
+        private static final int MAX_ACTIVE_MOBS = 300;
 
         public WorldMobSpawnerTask(World world, TrialDifficulty diff) {
             this.world = world;
@@ -201,8 +210,8 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             if (current >= MAX_ACTIVE_MOBS) return;
 
             // 計算本波要刷多少
-            int desired = diff == TrialDifficulty.HARD
-                    ? rnd.nextInt(4) + 7   // 7–10
+            int desired = diff == TrialDifficulty.HELL
+                    ? rnd.nextInt(5) + 8// 8–12
                     : rnd.nextInt(3) + 4;  // 4–6
             int toSpawn = Math.min(desired, MAX_ACTIVE_MOBS - (int)current);
 
@@ -357,6 +366,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             }
         }
     }
+
     @EventHandler
     public void onPlayerQuit(PlayerQuitEvent event) {
         Player player = event.getPlayer();
@@ -638,6 +648,84 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         // 取消所有傳送門結構生成
         event.setCancelled(true);
     }
+    @EventHandler
+    public void onEntityDeath(EntityDeathEvent evt) {
+        World world = evt.getEntity().getWorld();
+        String name = world.getName();
+        if (!name.startsWith("trial_")) return;
+        if (!(evt.getEntity() instanceof Monster)) return;
+
+        // 1. 取得最後一次傷害事件
+        EntityDamageEvent last = evt.getEntity().getLastDamageCause();
+        if (!(last instanceof EntityDamageByEntityEvent dbe)) {
+            // 非實體直接攻擊（如爆炸）— 不計數
+            return;
+        }
+        // 2. 強轉為 EntityDamageByEntityEvent
+        Entity damager = dbe.getDamager();
+        // 3. 只計算玩家直接攻擊
+        if (!(damager instanceof Player)) {
+            return;
+        }
+
+        UUID owner = findWorldOwner(name);
+        if (owner == null) return;
+        TrialDifficulty diff = playerDifficulties.get(owner);
+        if (diff != TrialDifficulty.HELL) return;
+
+        // 增加計數
+        int count = worldKillCounts.getOrDefault(name, 0) + 1;
+        worldKillCounts.put(name, count);
+
+        // 如果是第一次擊殺，記錄開始時間
+        if (count == 1) {
+            worldStartTimes.put(name, System.currentTimeMillis());
+        }
+
+        // 達 300 就結束試煉
+        if (count >= 300) {
+            // 計算耗時
+            long start = worldStartTimes.getOrDefault(name, System.currentTimeMillis());
+            long elapsedMs = System.currentTimeMillis() - start;
+            long totalSeconds = elapsedMs / 1000;
+            long minutes = totalSeconds / 60;
+            long seconds = totalSeconds % 60;
+
+            // 格式化時間字串
+            String timeStr = (minutes > 0
+                    ? minutes + " 分 " + seconds + " 秒"
+                    : seconds + " 秒");
+
+            // 停止刷怪任務
+            WorldMobSpawnerTask spawner = spawnerTasks.remove(owner);
+            if (spawner != null) spawner.stop();
+
+            // 清光所有怪物
+            world.getEntities().stream()
+                    .filter(e -> e instanceof Monster)
+                    .forEach(Entity::remove);
+
+            // 廣播完成訊息，並顯示耗時
+            world.getPlayers().forEach(p ->
+                    p.sendMessage("§6【試煉完成】恭喜，在地獄難度的試煉副本已擊殺 300 隻怪物！" +
+                            " 耗時：" + timeStr)
+            );
+
+            // 重置計數與開始時間，以便下次重新開始
+            worldKillCounts.remove(name);
+            worldStartTimes.remove(name);
+        }
+    }
+
+    /** 輔助：給定 worldName 找到對應的玩家 UUID */
+    private UUID findWorldOwner(String worldName) {
+        for (var entry : playerTrialWorlds.entrySet()) {
+            if (entry.getValue().getName().equals(worldName)) {
+                return entry.getKey();
+            }
+        }
+        return null;
+    }
 
     /**
      * /trialchambers 指令處理，重複執行前先刪除舊世界
@@ -726,6 +814,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
                 player.sendMessage("§c無法建立試煉世界，請稍後再試");
                 return true;
             }
+            // 設置玩家的試煉世界
             playerTrialWorlds.put(uid, personal);
             // 記錄難度並啟動刷怪任務
             playerDifficulties.put(uid, diff);
@@ -733,6 +822,8 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             spawnerTasks.put(uid, spawner);
             spawner.start();
 
+            String name = personal.getName();
+            worldKillCounts.put(name, 0);
             int y = getConfig().getInt("trial_chamber.y", 50);
             int range = getConfig().getInt("trial_range", 500);
             Random rnd = new Random();
