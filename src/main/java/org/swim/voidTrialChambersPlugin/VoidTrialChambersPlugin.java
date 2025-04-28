@@ -1,5 +1,8 @@
 package org.swim.voidTrialChambersPlugin;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.reflect.TypeToken;
 import net.kyori.adventure.text.Component;
 import org.bukkit.*;
 import org.bukkit.World.Environment;
@@ -19,6 +22,7 @@ import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
+import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
@@ -30,15 +34,18 @@ import org.bukkit.potion.PotionEffectType;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
 import org.geysermc.floodgate.api.FloodgateApi;
-import org.bukkit.event.entity.EntityDeathEvent;
-import org.bukkit.entity.Monster;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.File;
+import java.io.FileReader;
+import java.io.FileWriter;
 import java.io.IOException;
+import java.lang.reflect.Type;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
 
@@ -70,6 +77,17 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
     private final Map<String, Long> worldStartTimes = new HashMap<>();
     // 每個試煉世界的最大玩家數量
     private static final int MAX_TRIAL_PLAYERS = 4;
+    // 單人時間排行榜
+    private final Map<String, List<TimeLeaderboardEntry>> timeLeaderboardSolo = new HashMap<>();
+    // 團隊時間排行榜
+    private final Map<String, List<TimeLeaderboardEntry>> timeLeaderboardTeam = new HashMap<>();
+    // 击杀排行榜
+    private final Map<String, List<KillsLeaderboardEntry>> killsLeaderboard = new HashMap<>();
+    private final Map<String, TrialSession> activeTrialSessions = new ConcurrentHashMap<>();
+
+    private File soloTimeLeaderboardFile;
+    private File teamTimeLeaderboardFile;
+    private File killsLeaderboardFile;
 
 
     @Override
@@ -77,11 +95,15 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         Bukkit.getPluginManager().registerEvents(this, this);
         saveDefaultConfig();
         reloadConfig();
+        setupLeaderboardFiles();
+        loadLeaderboards();
         MonsterCleaner.startCleaningTask(this);
         excludedWorldNames = getConfig().getStringList("excluded_worlds");
         TrialChambersCommand trialCmd = new TrialChambersCommand();
         Objects.requireNonNull(getCommand("trialchambers")).setExecutor(new TrialChambersCommand());
         Objects.requireNonNull(getCommand("exittrial")).setExecutor(new ExitTrialCommand());
+        Objects.requireNonNull(getCommand("trialleaderboard")).setExecutor(new LeaderboardCommand());
+        Objects.requireNonNull(getCommand("trialleaderboard")).setTabCompleter(new LeaderboardCommand());
         // 註冊定期清理任務，每5分鐘執行一次
         new BukkitRunnable() {
             @Override
@@ -148,6 +170,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
 
         getLogger().info("Void Trial Chambers Plugin 已停用");
     }
+
     /**
      * Difficulty enum 定義刷怪列表
      */
@@ -179,6 +202,187 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         }
     }
 
+    private void setupLeaderboardFiles() {
+
+        File dataFolder = getDataFolder();
+        if (!dataFolder.exists()) {
+            dataFolder.mkdirs();
+        }
+
+        soloTimeLeaderboardFile = new File(dataFolder, "solo_time_leaderboard.json");
+        teamTimeLeaderboardFile = new File(dataFolder, "team_time_leaderboard.json");
+        killsLeaderboardFile = new File(dataFolder, "kills_leaderboard.json");
+
+        try {
+            if (!soloTimeLeaderboardFile.exists()) soloTimeLeaderboardFile.createNewFile();
+            if (!teamTimeLeaderboardFile.exists()) teamTimeLeaderboardFile.createNewFile();
+            if (!killsLeaderboardFile.exists()) killsLeaderboardFile.createNewFile();
+        } catch (IOException e) {
+            getLogger().warning("無法創建排行榜文件: " + e.getMessage());
+        }
+    }
+
+    private void loadLeaderboards() {
+        Gson gson = new GsonBuilder().setPrettyPrinting().create();
+
+        // Load solo time leaderboard
+        try (FileReader reader = new FileReader(soloTimeLeaderboardFile)) {
+            Type type = new TypeToken<Map<String, List<TimeLeaderboardEntry>>>(){}.getType();
+            Map<String, List<TimeLeaderboardEntry>> loaded = gson.fromJson(reader, type);
+            if (loaded != null) {
+                timeLeaderboardSolo.putAll(loaded);
+            }
+        } catch (IOException e) {
+            getLogger().warning("加載單人時間排行榜時發生錯誤: " + e.getMessage());
+        }
+
+        // Load team time leaderboard
+        try (FileReader reader = new FileReader(teamTimeLeaderboardFile)) {
+            Type type = new TypeToken<Map<String, List<TimeLeaderboardEntry>>>(){}.getType();
+            Map<String, List<TimeLeaderboardEntry>> loaded = gson.fromJson(reader, type);
+            if (loaded != null) {
+                timeLeaderboardTeam.putAll(loaded);
+            }
+        } catch (IOException e) {
+            getLogger().warning("加載團隊時間排行榜時發生錯誤: " + e.getMessage());
+        }
+
+        // Load kills leaderboard
+        try (FileReader reader = new FileReader(killsLeaderboardFile)) {
+            Type type = new TypeToken<Map<String, List<KillsLeaderboardEntry>>>(){}.getType();
+            Map<String, List<KillsLeaderboardEntry>> loaded = gson.fromJson(reader, type);
+            if (loaded != null) {
+                killsLeaderboard.putAll(loaded);
+            }
+        } catch (IOException e) {
+            getLogger().warning("加載擊殺排行榜時發生錯誤: " + e.getMessage());
+        }
+    }
+
+    private void saveLeaderboards() {
+        Gson gson = new GsonBuilder().setPrettyPrinting().create();
+
+        // Save solo time leaderboard
+        try (FileWriter writer = new FileWriter(soloTimeLeaderboardFile)) {
+            gson.toJson(timeLeaderboardSolo, writer);
+        } catch (IOException e) {
+            getLogger().warning("保存單人時間排行榜時發生錯誤: " + e.getMessage());
+        }
+
+        // Save team time leaderboard
+        try (FileWriter writer = new FileWriter(teamTimeLeaderboardFile)) {
+            gson.toJson(timeLeaderboardTeam, writer);
+        } catch (IOException e) {
+            getLogger().warning("保存團隊時間排行榜時發生錯誤: " + e.getMessage());
+        }
+
+        // Save kills leaderboard
+        try (FileWriter writer = new FileWriter(killsLeaderboardFile)) {
+            gson.toJson(killsLeaderboard, writer);
+        } catch (IOException e) {
+            getLogger().warning("保存擊殺排行榜時發生錯誤: " + e.getMessage());
+        }
+    }
+    private class LeaderboardCommand implements CommandExecutor, TabCompleter {
+        @Override
+        public boolean onCommand(@NotNull CommandSender sender, @NotNull Command cmd,
+                                 @NotNull String label, @NotNull String @NotNull [] args) {
+            if (!(sender instanceof Player player)) {
+                sender.sendMessage("§c只有玩家可以使用此指令");
+                return true;
+            }
+
+            // 預設顯示地獄難度的排行榜
+            String type = args.length > 0 ? args[0].toLowerCase() : "solo";
+
+            switch (type) {
+                case "solo":
+                    showSoloTimeLeaderboard(player);
+                    break;
+                case "team":
+                    showTeamTimeLeaderboard(player);
+                    break;
+                case "kills":
+                    showKillsLeaderboard(player);
+                    break;
+                default:
+                    player.sendMessage("§c未知的排行榜類型。用法: /trialleaderboard [solo|team|kills]");
+            }
+
+            return true;
+        }
+
+        @Override
+        public List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command command,
+                                          @NotNull String alias, String[] args) {
+            if (args.length == 1) {
+                String input = args[0].toLowerCase();
+                return Arrays.asList("solo", "team", "kills").stream()
+                        .filter(s -> s.startsWith(input))
+                        .collect(Collectors.toList());
+            }
+            return Collections.emptyList();
+        }
+
+        private void showSoloTimeLeaderboard(Player player) {
+            List<TimeLeaderboardEntry> entries = timeLeaderboardSolo.getOrDefault(TrialDifficulty.HELL.name(), Collections.emptyList());
+
+            player.sendMessage("§6=========== §e單人時間排行榜§6===========");
+            if (entries.isEmpty()) {
+                player.sendMessage("§7暫無記錄");
+                return;
+            }
+
+            for (int i = 0; i < entries.size(); i++) {
+                TimeLeaderboardEntry entry = entries.get(i);
+                player.sendMessage(String.format("§e#%d §f%s §7- §a%s",
+                        i + 1,
+                        entry.getPlayerNames().getFirst(),
+                        entry.getFormattedTime()));
+            }
+        }
+
+        private void showTeamTimeLeaderboard(Player player) {
+            List<TimeLeaderboardEntry> entries = timeLeaderboardTeam.getOrDefault(TrialDifficulty.HELL.name(), Collections.emptyList());
+
+            player.sendMessage("§6=========== §e團隊時間排行榜§6===========");
+            if (entries.isEmpty()) {
+                player.sendMessage("§7暫無記錄");
+                return;
+            }
+
+            for (int i = 0; i < entries.size(); i++) {
+                TimeLeaderboardEntry entry = entries.get(i);
+                player.sendMessage(String.format("§e#%d §f%s §7- §a%s",
+                        i + 1,
+                        String.join(", ", entry.getPlayerNames()),
+                        entry.getFormattedTime()));
+            }
+        }
+
+        private void showKillsLeaderboard(Player player) {
+            List<KillsLeaderboardEntry> entries = killsLeaderboard.getOrDefault(TrialDifficulty.HELL.name(), Collections.emptyList());
+
+            player.sendMessage("§6=========== §e擊殺排行榜§6===========");
+            if (entries.isEmpty()) {
+                player.sendMessage("§7暫無記錄");
+                return;
+            }
+
+            for (int i = 0; i < entries.size(); i++) {
+                KillsLeaderboardEntry entry = entries.get(i);
+                StringBuilder sb = new StringBuilder();
+                sb.append(String.format("§e#%d §a總擊殺: %d §7- ", i + 1, entry.getTotalKills()));
+
+                List<String> playerRecords = entry.getPlayerRecords().stream()
+                        .map(record -> record.playerName() + ": " + record.kills())
+                        .collect(Collectors.toList());
+
+                sb.append("§f").append(String.join(", ", playerRecords));
+                player.sendMessage(sb.toString());
+            }
+        }
+    }
     private class WorldMobSpawnerTask {
         private final World world;
         private final TrialDifficulty diff;
@@ -320,7 +524,6 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
     // 新增玩家進入/離開世界事件處理
     @EventHandler
     public void onPlayerChangedWorld(PlayerChangedWorldEvent event) {
-        // 只處理試煉世界
         Player player = event.getPlayer();
         World to = player.getWorld();
 
@@ -334,8 +537,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
                 // 人数已满，将玩家传回主世界
                 World main = Bukkit.getWorld("world");
                 if (main != null) {
-                    player.sendMessage("§c試煉世界已滿 (最多 "
-                            + MAX_TRIAL_PLAYERS + " 位玩家)，已傳送回主世界。");
+                    player.sendMessage("§c試煉世界已滿 (最多 " + MAX_TRIAL_PLAYERS + " 位玩家)，已傳送回主世界。");
                     player.teleport(main.getSpawnLocation());
                 }
                 // 不做后续清理逻辑
@@ -343,9 +545,15 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             }
         }
 
+        // —— 新增：更新試煉會話參與者 ——
+        if (to.getName().startsWith("trial_")) {
+            TrialSession session = activeTrialSessions.computeIfAbsent(to.getName(), k -> new TrialSession(to.getName()));
+            session.addParticipant(player);
+        }
+
         // —— 以下为原有逻辑 ——
+
         World from = event.getFrom();
-        updateWorldAccess(to);
 
         // 更新目標世界的訪問時間
         updateWorldAccess(to);
@@ -680,6 +888,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         // 取消所有傳送門結構生成
         event.setCancelled(true);
     }
+
     @EventHandler
     public void onEntityDeath(EntityDeathEvent evt) {
         World world = evt.getEntity().getWorld();
@@ -696,7 +905,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         // 2. 強轉為 EntityDamageByEntityEvent
         Entity damager = dbe.getDamager();
         // 3. 只計算玩家直接攻擊
-        if (!(damager instanceof Player)) {
+        if (!(damager instanceof Player player)) {
             return;
         }
 
@@ -708,6 +917,11 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         // 增加計數
         int count = worldKillCounts.getOrDefault(name, 0) + 1;
         worldKillCounts.put(name, count);
+
+        // 更新或建立試煉場景
+        TrialSession session = activeTrialSessions.computeIfAbsent(name, k -> new TrialSession(name));
+        session.addParticipant(player);
+        session.recordKill(player.getUniqueId());
 
         // 如果是第一次擊殺，記錄開始時間
         if (count == 1) {
@@ -737,18 +951,214 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
                     .filter(e -> e instanceof Monster)
                     .forEach(Entity::remove);
 
+            // 標記試煉完成並更新排行榜
+            TrialSession currentSession = activeTrialSessions.get(name);
+            if (currentSession != null) {
+                currentSession.markCompleted();
+
+                // 根據情況更新不同的排行榜
+                if (currentSession.isSolo()) {
+                    // 單人排行榜
+                    TimeLeaderboardEntry entry = new TimeLeaderboardEntry(
+                            name,
+                            currentSession.getParticipantNames(),
+                            elapsedMs
+                    );
+                    updateTimeLeaderboard(diff.name(), entry, true);
+                } else {
+                    // 多人排行榜
+                    TimeLeaderboardEntry entry = new TimeLeaderboardEntry(
+                            name,
+                            currentSession.getParticipantNames(),
+                            elapsedMs
+                    );
+                    updateTimeLeaderboard(diff.name(), entry, false);
+                }
+
+                // 擊殺排行榜
+                KillsLeaderboardEntry killsEntry = new KillsLeaderboardEntry(
+                        name,
+                        currentSession.getPlayerKillRecords()
+                );
+                updateKillsLeaderboard(diff.name(), killsEntry);
+
+                // 保存更新的排行榜
+                saveLeaderboards();
+            }
+
             // 廣播完成訊息，並顯示耗時
             world.getPlayers().forEach(p ->
                     p.sendMessage("§6【試煉完成】恭喜，在地獄難度的試煉副本已擊殺 300 隻怪物！" +
-                            " 耗時：" + timeStr)
+                            " 耗時：" + timeStr + "\n" +
+                            "§a排行榜已更新，可使用 /trialleaderboard 查看")
             );
 
             // 重置計數與開始時間，以便下次重新開始
             worldKillCounts.remove(name);
             worldStartTimes.remove(name);
+            activeTrialSessions.remove(name);
         }
     }
 
+    private void updateKillsLeaderboard(String difficulty, KillsLeaderboardEntry entry) {
+        List<KillsLeaderboardEntry> entries = killsLeaderboard.computeIfAbsent(difficulty, k -> new ArrayList<>());
+
+        // 添加新記錄
+        entries.add(entry);
+
+        // 按擊殺數排序（降序）
+        entries.sort((e1, e2) -> Integer.compare(e2.getTotalKills(), e1.getTotalKills()));
+
+        // 只保留前 10 名
+        if (entries.size() > 10) {
+            entries = entries.subList(0, 10);
+            killsLeaderboard.put(difficulty, entries);
+        }
+    }
+
+    private void updateTimeLeaderboard(String difficulty, TimeLeaderboardEntry entry, boolean isSolo) {
+        Map<String, List<TimeLeaderboardEntry>> leaderboard = isSolo ? timeLeaderboardSolo : timeLeaderboardTeam;
+        List<TimeLeaderboardEntry> entries = leaderboard.computeIfAbsent(difficulty, k -> new ArrayList<>());
+
+        // 添加新記錄
+        entries.add(entry);
+
+        // 按完成時間排序
+        entries.sort(Comparator.comparingLong(TimeLeaderboardEntry::getCompletionTimeMs));
+
+        // 只保留前 10 名
+        if (entries.size() > 10) {
+            entries = entries.subList(0, 10);
+            leaderboard.put(difficulty, entries);
+        }
+    }
+
+    // Classes to represent leaderboard entries
+    public static class TimeLeaderboardEntry {
+        private final String worldName;
+        private final List<String> playerNames;
+        private final long completionTimeMs;
+        private final String formattedTime;
+        private final long timestamp;
+
+        public TimeLeaderboardEntry(String worldName, List<String> playerNames, long completionTimeMs) {
+            this.worldName = worldName;
+            this.playerNames = playerNames;
+            this.completionTimeMs = completionTimeMs;
+            this.formattedTime = formatTime(completionTimeMs);
+            this.timestamp = System.currentTimeMillis();
+        }
+
+        public String getWorldName() {
+            return worldName;
+        }
+
+        public List<String> getPlayerNames() {
+            return playerNames;
+        }
+
+        public long getCompletionTimeMs() {
+            return completionTimeMs;
+        }
+
+        public String getFormattedTime() {
+            return formattedTime;
+        }
+
+        public long getTimestamp() {
+            return timestamp;
+        }
+
+        private String formatTime(long ms) {
+            long totalSeconds = ms / 1000;
+            long minutes = totalSeconds / 60;
+            long seconds = totalSeconds % 60;
+            return (minutes > 0 ? minutes + " 分 " : "") + seconds + " 秒";
+        }
+    }
+    public static class KillsLeaderboardEntry {
+        private final String worldName;
+        private final List<PlayerKillRecord> playerRecords;
+        private final int totalKills;
+        private final long timestamp;
+
+        public KillsLeaderboardEntry(String worldName, List<PlayerKillRecord> playerRecords) {
+            this.worldName = worldName;
+            this.playerRecords = playerRecords;
+            this.totalKills = playerRecords.stream().mapToInt(PlayerKillRecord::kills).sum();
+            this.timestamp = System.currentTimeMillis();
+        }
+
+        public String getWorldName() {
+            return worldName;
+        }
+
+        public List<PlayerKillRecord> getPlayerRecords() {
+            return playerRecords;
+        }
+
+        public int getTotalKills() {
+            return totalKills;
+        }
+
+        public long getTimestamp() {
+            return timestamp;
+        }
+    }
+
+    public record PlayerKillRecord(String playerName, int kills) {
+    }
+
+    public static class TrialSession {
+        private final long startTime;
+        private final Map<UUID, String> participants;
+        private final Map<UUID, Integer> playerKills;
+        private boolean completed;
+
+        public TrialSession(String worldName) {
+            this.startTime = System.currentTimeMillis();
+            this.participants = new HashMap<>();
+            this.playerKills = new HashMap<>();
+            this.completed = false;
+        }
+
+        public void addParticipant(Player player) {
+            participants.put(player.getUniqueId(), player.getName());
+        }
+
+        public void recordKill(UUID playerId) {
+            playerKills.put(playerId, playerKills.getOrDefault(playerId, 0) + 1);
+        }
+
+        public long getDuration() {
+            return System.currentTimeMillis() - startTime;
+        }
+
+        public boolean isSolo() {
+            return participants.size() == 1;
+        }
+
+        public List<String> getParticipantNames() {
+            return new ArrayList<>(participants.values());
+        }
+
+        public List<PlayerKillRecord> getPlayerKillRecords() {
+            List<PlayerKillRecord> records = new ArrayList<>();
+            for (Map.Entry<UUID, Integer> entry : playerKills.entrySet()) {
+                String playerName = participants.getOrDefault(entry.getKey(), "Unknown");
+                records.add(new PlayerKillRecord(playerName, entry.getValue()));
+            }
+            return records;
+        }
+
+        public void markCompleted() {
+            this.completed = true;
+        }
+
+        public boolean isCompleted() {
+            return completed;
+        }
+    }
     /** 輔助：給定 worldName 找到對應的玩家 UUID */
     private UUID findWorldOwner(String worldName) {
         for (var entry : playerTrialWorlds.entrySet()) {

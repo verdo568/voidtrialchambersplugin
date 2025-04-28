@@ -14,6 +14,10 @@ commands:
     description: "退出試煉，傳送回主世界重生點"
     usage: /exittrial
 
+  trialleaderboard:
+    description: 查看試煉副本排行榜
+    usage: /<command> [solo|team|kills] [EASY|NORMAL|HELL]
+
 permissions:
   trialchambers.use:
     description: Allows player to use the /trialchambers command
