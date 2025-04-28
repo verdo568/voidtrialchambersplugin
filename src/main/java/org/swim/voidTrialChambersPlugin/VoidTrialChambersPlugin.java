@@ -202,6 +202,11 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         private void spawnWave() {
             if (!world.getName().startsWith("trial_")) return;
 
+            List<EntityType> types = diff.getMobs();
+            if (types.isEmpty()) {
+                // 簡單難度不刷怪
+                return;
+            }
             // 計算世界中目前的目標怪物數量
             long current = world.getEntities().stream()
                     .filter(e -> e instanceof LivingEntity)
@@ -226,6 +231,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
 
         private void spawnAroundPlayer(Player p, int count) {
             List<EntityType> types = diff.getMobs();
+            if (types.isEmpty()) return;  // 简单难度直接退出
             int spawned = 0, tries = 0, maxTries = count * 5;
             Location base = p.getLocation();
 
