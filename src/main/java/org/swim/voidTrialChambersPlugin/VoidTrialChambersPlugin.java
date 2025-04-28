@@ -68,6 +68,8 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
     private final Map<String, Integer> worldKillCounts = new HashMap<>();
     // 每個試煉世界的開始時間（毫秒）
     private final Map<String, Long> worldStartTimes = new HashMap<>();
+    // 每個試煉世界的最大玩家數量
+    private static final int MAX_TRIAL_PLAYERS = 4;
 
 
     @Override
@@ -318,8 +320,32 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
     // 新增玩家進入/離開世界事件處理
     @EventHandler
     public void onPlayerChangedWorld(PlayerChangedWorldEvent event) {
+        // 只處理試煉世界
+        Player player = event.getPlayer();
+        World to = player.getWorld();
+
+        // 如果切换到 trial_* 世界，且玩家不是 OP
+        if (to.getName().startsWith("trial_") && !player.isOp()) {
+            // 计算当前世界中非 OP 玩家数
+            long nonOpCount = to.getPlayers().stream()
+                    .filter(p -> !p.isOp())
+                    .count();
+            if (nonOpCount > MAX_TRIAL_PLAYERS) {
+                // 人数已满，将玩家传回主世界
+                World main = Bukkit.getWorld("world");
+                if (main != null) {
+                    player.sendMessage("§c試煉世界已滿 (最多 "
+                            + MAX_TRIAL_PLAYERS + " 位玩家)，已傳送回主世界。");
+                    player.teleport(main.getSpawnLocation());
+                }
+                // 不做后续清理逻辑
+                return;
+            }
+        }
+
+        // —— 以下为原有逻辑 ——
         World from = event.getFrom();
-        World to = event.getPlayer().getWorld();
+        updateWorldAccess(to);
 
         // 更新目標世界的訪問時間
         updateWorldAccess(to);
