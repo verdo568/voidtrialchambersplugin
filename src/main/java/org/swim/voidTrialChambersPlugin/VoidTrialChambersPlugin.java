@@ -46,6 +46,7 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
 
@@ -317,7 +318,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
                                           @NotNull String alias, String[] args) {
             if (args.length == 1) {
                 String input = args[0].toLowerCase();
-                return Arrays.asList("solo", "team", "kills").stream()
+                return Stream.of("solo", "team", "kills")
                         .filter(s -> s.startsWith(input))
                         .collect(Collectors.toList());
             }
