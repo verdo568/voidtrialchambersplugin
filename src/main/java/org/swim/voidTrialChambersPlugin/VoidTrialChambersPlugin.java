@@ -1192,6 +1192,8 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
 
             int perPlayer = Math.max(1, toSpawn / players.size());
             for (Player p : players) {
+                // 只對生存模式玩家刷怪
+                if (p.getGameMode() != GameMode.SURVIVAL) continue;
                 spawnAroundPlayer(p, perPlayer);
             }
         }
