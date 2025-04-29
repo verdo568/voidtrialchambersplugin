@@ -306,7 +306,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
                     showKillsLeaderboard(player);
                     break;
                 default:
-                    player.sendMessage("§c未知的排行榜類型。用法: /trialleaderboard [solo|team|kills]");
+                    player.sendMessage("§c未知的排行榜類型。用法: /trialleaderboard solo/team/kills");
             }
 
             return true;
@@ -990,7 +990,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             world.getPlayers().forEach(p ->
                     p.sendMessage("§6【試煉完成】恭喜，在地獄難度的試煉副本已擊殺 300 隻怪物！" +
                             " 耗時：" + timeStr + "\n" +
-                            "§a排行榜已更新，可使用 /trialleaderboard 查看")
+                            "§a排行榜已更新，可使用 /trialleaderboard solo/team/kills 查看")
             );
 
             // 重置計數與開始時間，以便下次重新開始
