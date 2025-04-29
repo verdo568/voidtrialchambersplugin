@@ -50,6 +50,10 @@ import java.util.stream.Stream;
 
 public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
 
+    // 世界保留時間（毫秒）
+    private static final long WORLD_RETENTION_TIME = 15 * 60 * 1000; // 15分鐘
+    // 每個試煉世界的最大玩家數量
+    private static final int MAX_TRIAL_PLAYERS = 4;
     // 每位玩家的試煉世界映射
     private final Map<UUID, World> playerTrialWorlds = new HashMap<>();
     // 原始位置備份
@@ -58,8 +62,6 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
     private final Map<UUID, TrialDifficulty> playerDifficulties = new HashMap<>();
     // MobSpawner 任務映射
     private final Map<UUID, WorldMobSpawnerTask> spawnerTasks = new HashMap<>();
-    // 排除處理的世界名單
-    private List<String> excludedWorldNames;
     // 試煉世界冷卻時間
     private final Map<UUID, Long> trialCooldowns = new HashMap<>();
     // 冷卻時間的 BossBar
@@ -70,14 +72,10 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
     private final Set<Location> playerPlacedBeds = new HashSet<>();
     // 新增：世界最後訪問時間
     private final Map<String, Long> worldLastAccessed = new HashMap<>();
-    // 世界保留時間（毫秒）
-    private static final long WORLD_RETENTION_TIME = 15 * 60 * 1000; // 15分鐘
     //每個試煉世界當前的擊殺數
     private final Map<String, Integer> worldKillCounts = new HashMap<>();
     // 每個試煉世界的開始時間（毫秒）
     private final Map<String, Long> worldStartTimes = new HashMap<>();
-    // 每個試煉世界的最大玩家數量
-    private static final int MAX_TRIAL_PLAYERS = 4;
     // 單人時間排行榜
     private final Map<String, List<TimeLeaderboardEntry>> timeLeaderboardSolo = new HashMap<>();
     // 團隊時間排行榜
@@ -85,9 +83,13 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
     // 击杀排行榜
     private final Map<String, List<KillsLeaderboardEntry>> killsLeaderboard = new HashMap<>();
     private final Map<String, TrialSession> activeTrialSessions = new ConcurrentHashMap<>();
-
+    // 排除處理的世界名單
+    private List<String> excludedWorldNames;
+    //單獨通關排行榜
     private File soloTimeLeaderboardFile;
+    // 團隊通關排行榜
     private File teamTimeLeaderboardFile;
+    // 擊殺數排行榜
     private File killsLeaderboardFile;
 
 
@@ -114,26 +116,6 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         }.runTaskTimer(this, 6000L, 6000L); // 初次延遲5分鐘，之後每5分鐘執行一次
         getLogger().info("記憶體清理任務已啟用");
         getLogger().info("Void Trial Chambers Plugin 已啟用");
-    }
-
-    public static class MonsterCleaner {
-
-        public static void startCleaningTask(VoidTrialChambersPlugin plugin) {
-            new BukkitRunnable() {
-                @Override
-                public void run() {
-                    for (World world : Bukkit.getWorlds()) {
-                        if (world.getName().startsWith("trial_")) {
-                            for (Entity entity : world.getEntities()) {
-                                if (entity instanceof Monster) {
-                                    entity.remove();
-                                }
-                            }
-                        }
-                    }
-                }
-            }.runTaskTimer(plugin, 0L, 3600L);
-        }
     }
 
     @Override
@@ -172,37 +154,6 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         getLogger().info("Void Trial Chambers Plugin 已停用");
     }
 
-    /**
-     * Difficulty enum 定義刷怪列表
-     */
-    public enum TrialDifficulty {
-        EASY("簡單"),
-        NORMAL("普通"),
-        HELL("地獄");
-
-        private final String display;
-        TrialDifficulty(String display) { this.display = display; }
-        /** 返回中文显示名 */
-        public String getDisplay() {
-            return display;
-        }
-
-        public static TrialDifficulty from(String s) {
-            for (TrialDifficulty d : values()) {
-                if (d.name().equalsIgnoreCase(s) || d.display.equalsIgnoreCase(s)) return d;
-            }
-            return null;
-        }
-
-        public List<EntityType> getMobs() {
-            return switch (this) {
-                case NORMAL -> List.of(EntityType.ZOMBIE, EntityType.SKELETON, EntityType.SPIDER);
-                case HELL   -> List.of(EntityType.ZOMBIE, EntityType.CREEPER, EntityType.ENDERMAN, EntityType.WITCH, EntityType.BOGGED, EntityType.STRAY, EntityType.PHANTOM,EntityType.CAVE_SPIDER,EntityType.CAVE_SPIDER,EntityType.ILLUSIONER,EntityType.PIGLIN_BRUTE);
-                default     -> List.of();
-            };
-        }
-    }
-
     private void setupLeaderboardFiles() {
 
         File dataFolder = getDataFolder();
@@ -228,7 +179,8 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
 
         // Load solo time leaderboard
         try (FileReader reader = new FileReader(soloTimeLeaderboardFile)) {
-            Type type = new TypeToken<Map<String, List<TimeLeaderboardEntry>>>(){}.getType();
+            Type type = new TypeToken<Map<String, List<TimeLeaderboardEntry>>>() {
+            }.getType();
             Map<String, List<TimeLeaderboardEntry>> loaded = gson.fromJson(reader, type);
             if (loaded != null) {
                 timeLeaderboardSolo.putAll(loaded);
@@ -239,7 +191,8 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
 
         // Load team time leaderboard
         try (FileReader reader = new FileReader(teamTimeLeaderboardFile)) {
-            Type type = new TypeToken<Map<String, List<TimeLeaderboardEntry>>>(){}.getType();
+            Type type = new TypeToken<Map<String, List<TimeLeaderboardEntry>>>() {
+            }.getType();
             Map<String, List<TimeLeaderboardEntry>> loaded = gson.fromJson(reader, type);
             if (loaded != null) {
                 timeLeaderboardTeam.putAll(loaded);
@@ -250,7 +203,8 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
 
         // Load kills leaderboard
         try (FileReader reader = new FileReader(killsLeaderboardFile)) {
-            Type type = new TypeToken<Map<String, List<KillsLeaderboardEntry>>>(){}.getType();
+            Type type = new TypeToken<Map<String, List<KillsLeaderboardEntry>>>() {
+            }.getType();
             Map<String, List<KillsLeaderboardEntry>> loaded = gson.fromJson(reader, type);
             if (loaded != null) {
                 killsLeaderboard.putAll(loaded);
@@ -284,211 +238,6 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             getLogger().warning("保存擊殺排行榜時發生錯誤: " + e.getMessage());
         }
     }
-    private class LeaderboardCommand implements CommandExecutor, TabCompleter {
-        @Override
-        public boolean onCommand(@NotNull CommandSender sender, @NotNull Command cmd,
-                                 @NotNull String label, @NotNull String @NotNull [] args) {
-            if (!(sender instanceof Player player)) {
-                sender.sendMessage("§c只有玩家可以使用此指令");
-                return true;
-            }
-
-            // 預設顯示地獄難度的排行榜
-            String type = args.length > 0 ? args[0].toLowerCase() : "solo";
-
-            switch (type) {
-                case "solo":
-                    showSoloTimeLeaderboard(player);
-                    break;
-                case "team":
-                    showTeamTimeLeaderboard(player);
-                    break;
-                case "kills":
-                    showKillsLeaderboard(player);
-                    break;
-                default:
-                    player.sendMessage("§c未知的排行榜類型。用法: /trialleaderboard solo/team/kills");
-            }
-
-            return true;
-        }
-
-        @Override
-        public List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command command,
-                                          @NotNull String alias, String[] args) {
-            if (args.length == 1) {
-                String input = args[0].toLowerCase();
-                return Stream.of("solo", "team", "kills")
-                        .filter(s -> s.startsWith(input))
-                        .collect(Collectors.toList());
-            }
-            return Collections.emptyList();
-        }
-
-        private void showSoloTimeLeaderboard(Player player) {
-            List<TimeLeaderboardEntry> entries = timeLeaderboardSolo.getOrDefault(TrialDifficulty.HELL.name(), Collections.emptyList());
-
-            player.sendMessage("§6=========== §e單人時間排行榜§6===========");
-            if (entries.isEmpty()) {
-                player.sendMessage("§7暫無記錄");
-                return;
-            }
-
-            for (int i = 0; i < entries.size(); i++) {
-                TimeLeaderboardEntry entry = entries.get(i);
-                player.sendMessage(String.format("§e#%d §f%s §7- §a%s",
-                        i + 1,
-                        entry.getPlayerNames().getFirst(),
-                        entry.getFormattedTime()));
-            }
-        }
-
-        private void showTeamTimeLeaderboard(Player player) {
-            List<TimeLeaderboardEntry> entries = timeLeaderboardTeam.getOrDefault(TrialDifficulty.HELL.name(), Collections.emptyList());
-
-            player.sendMessage("§6=========== §e團隊時間排行榜§6===========");
-            if (entries.isEmpty()) {
-                player.sendMessage("§7暫無記錄");
-                return;
-            }
-
-            for (int i = 0; i < entries.size(); i++) {
-                TimeLeaderboardEntry entry = entries.get(i);
-                player.sendMessage(String.format("§e#%d §f%s §7- §a%s",
-                        i + 1,
-                        String.join(", ", entry.getPlayerNames()),
-                        entry.getFormattedTime()));
-            }
-        }
-
-        private void showKillsLeaderboard(Player player) {
-            List<KillsLeaderboardEntry> entries = killsLeaderboard.getOrDefault(TrialDifficulty.HELL.name(), Collections.emptyList());
-
-            player.sendMessage("§6=========== §e擊殺排行榜§6===========");
-            if (entries.isEmpty()) {
-                player.sendMessage("§7暫無記錄");
-                return;
-            }
-
-            for (int i = 0; i < entries.size(); i++) {
-                KillsLeaderboardEntry entry = entries.get(i);
-                StringBuilder sb = new StringBuilder();
-                sb.append(String.format("§e#%d §a總擊殺: %d §7- ", i + 1, entry.getTotalKills()));
-
-                List<String> playerRecords = entry.getPlayerRecords().stream()
-                        .map(record -> record.playerName() + ": " + record.kills())
-                        .collect(Collectors.toList());
-
-                sb.append("§f").append(String.join(", ", playerRecords));
-                player.sendMessage(sb.toString());
-            }
-        }
-    }
-    private class WorldMobSpawnerTask {
-        private final World world;
-        private final TrialDifficulty diff;
-        private final Random rnd = new Random();
-        private BukkitTask task;
-        private static final int MAX_ACTIVE_MOBS = 300;
-
-        public WorldMobSpawnerTask(World world, TrialDifficulty diff) {
-            this.world = world;
-            this.diff  = diff;
-        }
-
-        public void start() {
-            // 立刻執行一次，之後每 [3~5] 秒重複
-            task = new BukkitRunnable() {
-                @Override
-                public void run() {
-                    spawnWave();
-                }
-            }.runTaskTimer(VoidTrialChambersPlugin.this, 0L, (rnd.nextInt(3) + 3) * 20L);
-        }
-
-        private void spawnWave() {
-            if (!world.getName().startsWith("trial_")) return;
-
-            List<EntityType> types = diff.getMobs();
-            if (types.isEmpty()) {
-                // 簡單難度不刷怪
-                return;
-            }
-            // 計算世界中目前的目標怪物數量
-            long current = world.getEntities().stream()
-                    .filter(e -> e instanceof LivingEntity)
-                    .filter(e -> diff.getMobs().contains(e.getType()))
-                    .count();
-            if (current >= MAX_ACTIVE_MOBS) return;
-
-            // 計算本波要刷多少
-            int desired = diff == TrialDifficulty.HELL
-                    ? rnd.nextInt(5) + 8// 8–12
-                    : rnd.nextInt(3) + 4;  // 4–6
-            int toSpawn = Math.min(desired, MAX_ACTIVE_MOBS - (int)current);
-
-            List<Player> players = world.getPlayers();
-            if (players.isEmpty()) return;
-
-            int perPlayer = Math.max(1, toSpawn / players.size());
-            for (Player p : players) {
-                spawnAroundPlayer(p, perPlayer);
-            }
-        }
-
-        private void spawnAroundPlayer(Player p, int count) {
-            List<EntityType> types = diff.getMobs();
-            if (types.isEmpty()) return;  // 简单难度直接退出
-            int spawned = 0, tries = 0, maxTries = count * 5;
-            Location base = p.getLocation();
-
-            while (spawned < count && tries++ < maxTries) {
-                double angle    = Math.toRadians(rnd.nextDouble() * 360);
-                double distance = rnd.nextDouble() * 2 + 3;
-                Location loc = base.clone().add(
-                        Math.cos(angle) * distance,
-                        0,
-                        Math.sin(angle) * distance
-                );
-
-                if (!isSafeSpawnLocation(loc) || isNearVanillaBed(loc)) continue;
-
-                EntityType type = types.get(rnd.nextInt(types.size()));
-                world.spawnEntity(loc, type)
-                        .setCustomNameVisible(false);
-                spawned++;
-            }
-        }
-
-        private boolean isSafeSpawnLocation(Location loc) {
-            Block below = loc.clone().add(0, -1, 0).getBlock();
-            if (!below.getType().isSolid()) return false;
-            for (int dx=-1; dx<=1; dx++) for (int dz=-1; dz<=1; dz++)
-                for (int dy=0; dy<=1; dy++) {
-                    if (loc.clone().add(dx, dy, dz).getBlock().getType() != Material.AIR)
-                        return false;
-                }
-            return true;
-        }
-
-        private boolean isNearVanillaBed(Location loc) {
-            World w = loc.getWorld();
-            for (int dx=-8; dx<=8; dx++) for (int dz=-8; dz<=8; dz++) {
-                if (dx*dx+dz*dz > 64) continue;
-                Block b = w.getBlockAt(
-                        loc.getBlockX()+dx, loc.getBlockY(), loc.getBlockZ()+dz
-                );
-                if (b.getState() instanceof Bed && !playerPlacedBeds.contains(b.getLocation()))
-                    return true;
-            }
-            return false;
-        }
-
-        public void stop() {
-            if (task != null) task.cancel();
-        }
-    }
-
 
     // 建立個人試煉世界並確保 data 資料夾及空檔案存在
     private World createPersonalTrialWorld(UUID uuid) {
@@ -522,6 +271,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         }
         return world;
     }
+
     // 新增玩家進入/離開世界事件處理
     @EventHandler
     public void onPlayerChangedWorld(PlayerChangedWorldEvent event) {
@@ -551,8 +301,6 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             TrialSession session = activeTrialSessions.computeIfAbsent(to.getName(), k -> new TrialSession(to.getName()));
             session.addParticipant(player);
         }
-
-        // —— 以下为原有逻辑 ——
 
         World from = event.getFrom();
 
@@ -635,6 +383,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             task.cancel();
         }
     }
+
     private void createSpawnPlatform(World world) {
         Location spawn = world.getSpawnLocation();
         int baseY = spawn.getBlockY() - 1;
@@ -690,50 +439,35 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             }
         }
     }
+
     /**
      * 清理未使用的資源
      */
     private void cleanupUnusedResources() {
         long now = System.currentTimeMillis();
         int cleaned = 0;
-        List<String> worldsToClean = new ArrayList<>();
 
         // 識別需要清理的世界
-        for (Map.Entry<String, Long> entry : new HashMap<>(worldLastAccessed).entrySet()) {
-            String worldName = entry.getKey();
-            long lastAccess = entry.getValue();
-
-            // 檢查是否超過保留時間
-            if (now - lastAccess > WORLD_RETENTION_TIME) {
-                World world = Bukkit.getWorld(worldName);
-
-                // 確保世界存在且沒有玩家
-                if (world != null && world.getPlayers().isEmpty()) {
-                    worldsToClean.add(worldName);
-                }
-            }
-        }
+        List<String> worldsToClean = worldLastAccessed.entrySet().stream()
+                .filter(entry -> now - entry.getValue() > WORLD_RETENTION_TIME)
+                .map(Map.Entry::getKey)
+                .filter(worldName -> {
+                    World world = Bukkit.getWorld(worldName);
+                    return world != null && world.getPlayers().isEmpty();
+                })
+                .toList();
 
         // 執行清理
         for (String worldName : worldsToClean) {
             World world = Bukkit.getWorld(worldName);
             if (world == null) continue;
 
-            // 找到世界對應的擁有者
-            UUID ownerUUID = null;
-            for (Map.Entry<UUID, World> entry : new HashMap<>(playerTrialWorlds).entrySet()) {
-                if (entry.getValue().getName().equals(worldName)) {
-                    ownerUUID = entry.getKey();
-                    break;
-                }
-            }
+            UUID ownerUUID = getOwnerUUIDByWorldName(worldName);
 
-            // 停止相關任務並清理映射
             if (ownerUUID != null) {
                 stopAndCleanPlayerResources(ownerUUID);
             }
 
-            // 清理世界資料
             getLogger().info("正在清理未使用的試煉世界: " + worldName);
             clearEntityAndPoiFolders(world);
             worldLastAccessed.remove(worldName);
@@ -746,6 +480,18 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         if (cleaned > 0) {
             getLogger().info("記憶體清理完成: 釋放了 " + cleaned + " 個世界資源");
         }
+    }
+
+    /**
+     * 根據世界名稱取得對應的玩家 UUID
+     */
+    private UUID getOwnerUUIDByWorldName(String worldName) {
+        for (Map.Entry<UUID, World> entry : playerTrialWorlds.entrySet()) {
+            if (entry.getValue().getName().equals(worldName)) {
+                return entry.getKey();
+            }
+        }
+        return null;
     }
 
     // 新增輔助方法，處理停止和清理單個玩家的所有資源
@@ -817,6 +563,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             worldLastAccessed.put(world.getName(), System.currentTimeMillis());
         }
     }
+
     @EventHandler
     public void onBlockPlace(BlockPlaceEvent event) {
         World world = event.getBlockPlaced().getWorld();
@@ -828,6 +575,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             playerPlacedBeds.add(block.getLocation());
         }
     }
+
     @EventHandler
     public void onSignPlace(BlockPlaceEvent event) {
         Block block = event.getBlockPlaced();
@@ -869,6 +617,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             );
         }
     }
+
     @EventHandler
     public void onBlockBreak(BlockBreakEvent event) {
         World world = event.getBlock().getWorld();
@@ -880,6 +629,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             playerPlacedBeds.remove(block.getLocation());
         }
     }
+
     // 攔截任何形式的傳送門生成（保險起見）
     @EventHandler
     public void onPortalCreate(PortalCreateEvent event) {
@@ -1034,6 +784,98 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         }
     }
 
+    /**
+     * 輔助：給定 worldName 找到對應的玩家 UUID
+     */
+    private UUID findWorldOwner(String worldName) {
+        for (var entry : playerTrialWorlds.entrySet()) {
+            if (entry.getValue().getName().equals(worldName)) {
+                return entry.getKey();
+            }
+        }
+        return null;
+    }
+
+    @EventHandler
+    public void onPlayerRespawn(PlayerRespawnEvent evt) {
+        Player p = evt.getPlayer();
+        String worldName = p.getWorld().getName();
+        if (excludedWorldNames.contains(worldName)) {
+            return;
+        }
+        World main = Bukkit.getWorld("world");
+        if (main != null) {
+            evt.setRespawnLocation(main.getSpawnLocation());
+            p.sendMessage("§6你已重生於主世界重生點！");
+            UUID uid = p.getUniqueId();
+            World w = playerTrialWorlds.remove(uid);
+            clearEntityAndPoiFolders(w);
+        }
+    }
+
+    @Override
+    public ChunkGenerator getDefaultWorldGenerator(@NotNull String worldName, String id) {
+        return new VoidChunkGenerator();
+    }
+
+    /**
+     * Difficulty enum 定義刷怪列表
+     */
+    public enum TrialDifficulty {
+        EASY("簡單"),
+        NORMAL("普通"),
+        HELL("地獄");
+
+        private final String display;
+
+        TrialDifficulty(String display) {
+            this.display = display;
+        }
+
+        public static TrialDifficulty from(String s) {
+            for (TrialDifficulty d : values()) {
+                if (d.name().equalsIgnoreCase(s) || d.display.equalsIgnoreCase(s)) return d;
+            }
+            return null;
+        }
+
+        /**
+         * 返回中文显示名
+         */
+        public String getDisplay() {
+            return display;
+        }
+
+        public List<EntityType> getMobs() {
+            return switch (this) {
+                case NORMAL -> List.of(EntityType.ZOMBIE, EntityType.SKELETON, EntityType.SPIDER);
+                case HELL ->
+                        List.of(EntityType.ZOMBIE, EntityType.CREEPER, EntityType.ENDERMAN, EntityType.WITCH, EntityType.BOGGED, EntityType.STRAY, EntityType.PHANTOM, EntityType.CAVE_SPIDER, EntityType.CAVE_SPIDER, EntityType.ILLUSIONER, EntityType.PIGLIN_BRUTE);
+                default -> List.of();
+            };
+        }
+    }
+
+    public static class MonsterCleaner {
+
+        public static void startCleaningTask(VoidTrialChambersPlugin plugin) {
+            new BukkitRunnable() {
+                @Override
+                public void run() {
+                    for (World world : Bukkit.getWorlds()) {
+                        if (world.getName().startsWith("trial_")) {
+                            for (Entity entity : world.getEntities()) {
+                                if (entity instanceof Monster) {
+                                    entity.remove();
+                                }
+                            }
+                        }
+                    }
+                }
+            }.runTaskTimer(plugin, 0L, 3600L);
+        }
+    }
+
     // Classes to represent leaderboard entries
     public static class TimeLeaderboardEntry {
         private final String worldName;
@@ -1077,6 +919,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             return (minutes > 0 ? minutes + " 分 " : "") + seconds + " 秒";
         }
     }
+
     public static class KillsLeaderboardEntry {
         private final String worldName;
         private final List<PlayerKillRecord> playerRecords;
@@ -1160,14 +1003,252 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             return completed;
         }
     }
-    /** 輔助：給定 worldName 找到對應的玩家 UUID */
-    private UUID findWorldOwner(String worldName) {
-        for (var entry : playerTrialWorlds.entrySet()) {
-            if (entry.getValue().getName().equals(worldName)) {
-                return entry.getKey();
+
+    public static class VoidChunkGenerator extends ChunkGenerator {
+        @Override
+        public void generateNoise(@NotNull WorldInfo info, @NotNull Random rand, int x, int z, @NotNull ChunkData data) {
+            // 在 y=0 處生成一層基岩，防止玩家掉落虛空
+            if (x == 0 && z == 0) {
+                data.setBlock(0, 0, 0, Material.BEDROCK);
             }
         }
-        return null;
+
+        @Override
+        public void generateSurface(@NotNull WorldInfo info, @NotNull Random rand, int x, int z, @NotNull ChunkData data) {
+        }
+
+        @Override
+        public void generateCaves(@NotNull WorldInfo info, @NotNull Random rand, int x, int z, @NotNull ChunkData data) {
+        }
+
+        // 優化：預先生成重要區塊以減少動態生成延遲
+        @Override
+        public boolean shouldGenerateCaves() {
+            return false;
+        }
+
+        @Override
+        public boolean shouldGenerateDecorations() {
+            return false;
+        }
+
+        @Override
+        public boolean shouldGenerateMobs() {
+            return false;
+        }
+
+        @Override
+        public boolean shouldGenerateStructures() {
+            return false;
+        }
+    }
+
+    private class LeaderboardCommand implements CommandExecutor, TabCompleter {
+        @Override
+        public boolean onCommand(@NotNull CommandSender sender, @NotNull Command cmd,
+                                 @NotNull String label, @NotNull String @NotNull [] args) {
+            if (!(sender instanceof Player player)) {
+                sender.sendMessage("§c只有玩家可以使用此指令");
+                return true;
+            }
+
+            // 預設顯示地獄難度的排行榜
+            String type = args.length > 0 ? args[0].toLowerCase() : "solo";
+
+            switch (type) {
+                case "solo":
+                    showSoloTimeLeaderboard(player);
+                    break;
+                case "team":
+                    showTeamTimeLeaderboard(player);
+                    break;
+                case "kills":
+                    showKillsLeaderboard(player);
+                    break;
+                default:
+                    player.sendMessage("§c未知的排行榜類型。用法: /trialleaderboard solo/team/kills");
+            }
+
+            return true;
+        }
+
+        @Override
+        public List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command command,
+                                          @NotNull String alias, String[] args) {
+            if (args.length == 1) {
+                String input = args[0].toLowerCase();
+                return Stream.of("solo", "team", "kills")
+                        .filter(s -> s.startsWith(input))
+                        .collect(Collectors.toList());
+            }
+            return Collections.emptyList();
+        }
+
+        private void showSoloTimeLeaderboard(Player player) {
+            List<TimeLeaderboardEntry> entries = timeLeaderboardSolo.getOrDefault(TrialDifficulty.HELL.name(), Collections.emptyList());
+
+            player.sendMessage("§6=========== §e單人時間排行榜§6===========");
+            if (entries.isEmpty()) {
+                player.sendMessage("§7暫無記錄");
+                return;
+            }
+
+            for (int i = 0; i < entries.size(); i++) {
+                TimeLeaderboardEntry entry = entries.get(i);
+                player.sendMessage(String.format("§e#%d §f%s §7- §a%s",
+                        i + 1,
+                        entry.getPlayerNames().getFirst(),
+                        entry.getFormattedTime()));
+            }
+        }
+
+        private void showTeamTimeLeaderboard(Player player) {
+            List<TimeLeaderboardEntry> entries = timeLeaderboardTeam.getOrDefault(TrialDifficulty.HELL.name(), Collections.emptyList());
+
+            player.sendMessage("§6=========== §e團隊時間排行榜§6===========");
+            if (entries.isEmpty()) {
+                player.sendMessage("§7暫無記錄");
+                return;
+            }
+
+            for (int i = 0; i < entries.size(); i++) {
+                TimeLeaderboardEntry entry = entries.get(i);
+                player.sendMessage(String.format("§e#%d §f%s §7- §a%s",
+                        i + 1,
+                        String.join(", ", entry.getPlayerNames()),
+                        entry.getFormattedTime()));
+            }
+        }
+
+        private void showKillsLeaderboard(Player player) {
+            List<KillsLeaderboardEntry> entries = killsLeaderboard.getOrDefault(TrialDifficulty.HELL.name(), Collections.emptyList());
+
+            player.sendMessage("§6=========== §e擊殺排行榜§6===========");
+            if (entries.isEmpty()) {
+                player.sendMessage("§7暫無記錄");
+                return;
+            }
+
+            for (int i = 0; i < entries.size(); i++) {
+                KillsLeaderboardEntry entry = entries.get(i);
+                StringBuilder sb = new StringBuilder();
+                sb.append(String.format("§e#%d §a總擊殺: %d §7- ", i + 1, entry.getTotalKills()));
+
+                List<String> playerRecords = entry.getPlayerRecords().stream()
+                        .map(record -> record.playerName() + ": " + record.kills())
+                        .collect(Collectors.toList());
+
+                sb.append("§f").append(String.join(", ", playerRecords));
+                player.sendMessage(sb.toString());
+            }
+        }
+    }
+
+    private class WorldMobSpawnerTask {
+        private static final int MAX_ACTIVE_MOBS = 300;
+        private final World world;
+        private final TrialDifficulty diff;
+        private final Random rnd = new Random();
+        private BukkitTask task;
+
+        public WorldMobSpawnerTask(World world, TrialDifficulty diff) {
+            this.world = world;
+            this.diff = diff;
+        }
+
+        public void start() {
+            // 立刻執行一次，之後每 [3~5] 秒重複
+            task = new BukkitRunnable() {
+                @Override
+                public void run() {
+                    spawnWave();
+                }
+            }.runTaskTimer(VoidTrialChambersPlugin.this, 0L, (rnd.nextInt(3) + 3) * 20L);
+        }
+
+        private void spawnWave() {
+            if (!world.getName().startsWith("trial_")) return;
+
+            List<EntityType> types = diff.getMobs();
+            if (types.isEmpty()) {
+                // 簡單難度不刷怪
+                return;
+            }
+            // 計算世界中目前的目標怪物數量
+            long current = world.getEntities().stream()
+                    .filter(e -> e instanceof LivingEntity)
+                    .filter(e -> diff.getMobs().contains(e.getType()))
+                    .count();
+            if (current >= MAX_ACTIVE_MOBS) return;
+
+            // 計算本波要刷多少
+            int desired = diff == TrialDifficulty.HELL
+                    ? rnd.nextInt(5) + 8// 8–12
+                    : rnd.nextInt(3) + 4;  // 4–6
+            int toSpawn = Math.min(desired, MAX_ACTIVE_MOBS - (int) current);
+
+            List<Player> players = world.getPlayers();
+            if (players.isEmpty()) return;
+
+            int perPlayer = Math.max(1, toSpawn / players.size());
+            for (Player p : players) {
+                spawnAroundPlayer(p, perPlayer);
+            }
+        }
+
+        private void spawnAroundPlayer(Player p, int count) {
+            List<EntityType> types = diff.getMobs();
+            if (types.isEmpty()) return;  // 简单难度直接退出
+            int spawned = 0, tries = 0, maxTries = count * 5;
+            Location base = p.getLocation();
+
+            while (spawned < count && tries++ < maxTries) {
+                double angle = Math.toRadians(rnd.nextDouble() * 360);
+                double distance = rnd.nextDouble() * 2 + 3;
+                Location loc = base.clone().add(
+                        Math.cos(angle) * distance,
+                        0,
+                        Math.sin(angle) * distance
+                );
+
+                if (!isSafeSpawnLocation(loc) || isNearVanillaBed(loc)) continue;
+
+                EntityType type = types.get(rnd.nextInt(types.size()));
+                world.spawnEntity(loc, type)
+                        .setCustomNameVisible(false);
+                spawned++;
+            }
+        }
+
+        private boolean isSafeSpawnLocation(Location loc) {
+            Block below = loc.clone().add(0, -1, 0).getBlock();
+            if (!below.getType().isSolid()) return false;
+            for (int dx = -1; dx <= 1; dx++)
+                for (int dz = -1; dz <= 1; dz++)
+                    for (int dy = 0; dy <= 1; dy++) {
+                        if (loc.clone().add(dx, dy, dz).getBlock().getType() != Material.AIR)
+                            return false;
+                    }
+            return true;
+        }
+
+        private boolean isNearVanillaBed(Location loc) {
+            World w = loc.getWorld();
+            for (int dx = -8; dx <= 8; dx++)
+                for (int dz = -8; dz <= 8; dz++) {
+                    if (dx * dx + dz * dz > 64) continue;
+                    Block b = w.getBlockAt(
+                            loc.getBlockX() + dx, loc.getBlockY(), loc.getBlockZ() + dz
+                    );
+                    if (b.getState() instanceof Bed && !playerPlacedBeds.contains(b.getLocation()))
+                        return true;
+                }
+            return false;
+        }
+
+        public void stop() {
+            if (task != null) task.cancel();
+        }
     }
 
     /**
@@ -1210,6 +1291,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
                         BukkitTask task = new BukkitRunnable() {
                             final long startTime = System.currentTimeMillis();
                             final long total = remaining;
+
                             @Override
                             public void run() {
                                 long now = System.currentTimeMillis();
@@ -1225,7 +1307,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
                                 long min = left / 60000;
                                 long sec = (left % 60000 + 999) / 1000;
                                 bar.setTitle("§e指令冷卻中... " +
-                                        (min>0?min+" 分 ":"") + sec + " 秒");
+                                        (min > 0 ? min + " 分 " : "") + sec + " 秒");
                                 bar.setProgress((double) left / total);
                             }
                         }.runTaskTimer(VoidTrialChambersPlugin.this, 0L, 20L);
@@ -1237,9 +1319,12 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
                 return true;
             }
 
-            String input = args.length>0? args[0] : "普通";
+            String input = args.length > 0 ? args[0] : "普通";
             TrialDifficulty diff = TrialDifficulty.from(input);
-            if (diff == null) { player.sendMessage("§c無效難度，請輸入 簡單/普通/地獄"); return true; }
+            if (diff == null) {
+                player.sendMessage("§c無效難度，請輸入 簡單/普通/地獄");
+                return true;
+            }
 
             // 刪除舊試煉世界
             World oldWorld = playerTrialWorlds.remove(uid);
@@ -1303,7 +1388,8 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             }.runTaskTimer(VoidTrialChambersPlugin.this, 0L, 10L); // 每 0.5 秒更新一次
 
             new BukkitRunnable() {
-                @Override public void run() {
+                @Override
+                public void run() {
                     Bukkit.dispatchCommand(Bukkit.getConsoleSender(),
                             String.format("execute in %s run place structure minecraft:trial_chambers %d %d %d",
                                     personal.getName(), x, y, z));
@@ -1312,7 +1398,8 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             }.runTaskLater(VoidTrialChambersPlugin.this, 200L);
 
             new BukkitRunnable() {
-                @Override public void run() {
+                @Override
+                public void run() {
                     removeTrialEffects(player);
                     teleportToNearestBedOrOrigin(player, personal);
                 }
@@ -1320,6 +1407,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
 
             return true;
         }
+
         @Override
         public List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command command, @NotNull String alias, String[] args) {
             if (args.length == 1) {
@@ -1335,6 +1423,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             }
             return Collections.emptyList();
         }
+
         private void applyTrialEffects(Player p) {
             p.addPotionEffect(new org.bukkit.potion.PotionEffect(PotionEffectType.BLINDNESS, 400, 99));
             p.addPotionEffect(new org.bukkit.potion.PotionEffect(PotionEffectType.RESISTANCE, 380, 99));
@@ -1413,7 +1502,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             }
             UUID uid = p.getUniqueId();
             // —— 修复：先取出再判空 ——
-            WorldMobSpawnerTask  spawner = spawnerTasks.remove(uid);
+            WorldMobSpawnerTask spawner = spawnerTasks.remove(uid);
             if (spawner != null) {
                 spawner.stop();
             }
@@ -1424,64 +1513,6 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
                 clearEntityAndPoiFolders(w);
             }
             return true;
-        }
-    }
-
-    @EventHandler
-    public void onPlayerRespawn(PlayerRespawnEvent evt) {
-        Player p = evt.getPlayer();
-        String worldName = p.getWorld().getName();
-        if (excludedWorldNames.contains(worldName)) {
-            return;
-        }
-        World main = Bukkit.getWorld("world");
-        if (main != null) {
-            evt.setRespawnLocation(main.getSpawnLocation());
-            p.sendMessage("§6你已重生於主世界重生點！");
-            UUID uid = p.getUniqueId();
-            World w = playerTrialWorlds.remove(uid);
-            clearEntityAndPoiFolders(w);
-        }
-    }
-
-    @Override
-    public ChunkGenerator getDefaultWorldGenerator(@NotNull String worldName, String id) {
-        return new VoidChunkGenerator();
-    }
-    public static class VoidChunkGenerator extends ChunkGenerator {
-        @Override
-        public void generateNoise(@NotNull WorldInfo info, @NotNull Random rand, int x, int z, @NotNull ChunkData data) {
-            // 在 y=0 處生成一層基岩，防止玩家掉落虛空
-            if (x == 0 && z == 0) {
-                data.setBlock(0, 0, 0, Material.BEDROCK);
-            }
-        }
-
-        @Override
-        public void generateSurface(@NotNull WorldInfo info, @NotNull Random rand, int x, int z, @NotNull ChunkData data) {}
-
-        @Override
-        public void generateCaves(@NotNull WorldInfo info, @NotNull Random rand, int x, int z, @NotNull ChunkData data) {}
-
-        // 優化：預先生成重要區塊以減少動態生成延遲
-        @Override
-        public boolean shouldGenerateCaves() {
-            return false;
-        }
-
-        @Override
-        public boolean shouldGenerateDecorations() {
-            return false;
-        }
-
-        @Override
-        public boolean shouldGenerateMobs() {
-            return false;
-        }
-
-        @Override
-        public boolean shouldGenerateStructures() {
-            return false;
         }
     }
 }
