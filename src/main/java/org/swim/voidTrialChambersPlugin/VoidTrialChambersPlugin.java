@@ -625,112 +625,83 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         UUID owner = findWorldOwner(name);
         if (owner == null) return;
         TrialDifficulty diff = playerDifficulties.get(owner);
-        // 處理 HELL 與 JUDGMENT 難度
         if (diff != TrialDifficulty.HELL && diff != TrialDifficulty.JUDGMENT) return;
 
-        // 取得難度中文名稱
         String diffNameZh = diff == TrialDifficulty.HELL ? "地獄" : "吞夢噬念";
 
-        // 1. 取得最後一次傷害事件
         EntityDamageEvent last = evt.getEntity().getLastDamageCause();
-        if (!(last instanceof EntityDamageByEntityEvent dbe)) {
-            // 非實體直接攻擊（如爆炸）— 不計數
-            return;
-        }
-        // 2. 強轉為 EntityDamageByEntityEvent
+        if (!(last instanceof EntityDamageByEntityEvent dbe)) return;
         Entity damager = dbe.getDamager();
-        // 3. 只計算玩家直接攻擊
-        if (!(damager instanceof Player player)) {
-            return;
-        }
-        // 增加計數
+        if (!(damager instanceof Player player)) return;
+
+        // 累計擊殺
         int count = worldKillCounts.getOrDefault(name, 0) + 1;
         worldKillCounts.put(name, count);
 
-        // 更新或建立試煉場景
+        // 更新試煉 session
         TrialSession session = activeTrialSessions.computeIfAbsent(name, k -> new TrialSession(name));
         session.addParticipant(player);
         session.recordKill(player.getUniqueId());
 
-        // 每50個擊殺提醒一次（只傳給該世界所有玩家），但只到250
-        if (count % 50 == 0 && count <= 250) {
+        // 1. 動態設定提醒上限：Judgment 到 450，Hell 到 250
+        int reminderMax = diff == TrialDifficulty.JUDGMENT ? 450 : 250;
+        if (count % 50 == 0 && count <= reminderMax) {
             String msg = "§e本試煉（" + diffNameZh + "難度）已擊殺 " + count + " 隻怪物！";
             for (Player p : world.getPlayers()) {
                 p.sendMessage(Component.text(msg));
             }
         }
 
-        // 如果是第一次擊殺，記錄開始時間
+        // 第一次擊殺，記錄開始時間
         if (count == 1) {
             worldStartTimes.put(name, System.currentTimeMillis());
         }
 
-        // 達 300 就結束試煉
-        if (count >= 300) {
-            // 計算耗時
+        // 2. 動態設定結束目標：Judgment 要 500，Hell 要 300
+        int finishCount = diff == TrialDifficulty.JUDGMENT ? 500 : 300;
+        if (count >= finishCount) {
             long start = worldStartTimes.getOrDefault(name, System.currentTimeMillis());
             long elapsedMs = System.currentTimeMillis() - start;
             long totalSeconds = elapsedMs / 1000;
             long minutes = totalSeconds / 60;
             long seconds = totalSeconds % 60;
-
-            // 格式化時間字串
             String timeStr = (minutes > 0
                     ? minutes + " 分 " + seconds + " 秒"
                     : seconds + " 秒");
 
-            // 停止刷怪任務
+            // 停止刷怪，清場
             WorldMobSpawnerTask spawner = spawnerTasks.remove(owner);
             if (spawner != null) spawner.stop();
-
-            // 清光所有怪物
             world.getEntities().stream()
                     .filter(e -> e instanceof Monster)
                     .forEach(Entity::remove);
 
-            // 標記試煉完成並更新排行榜
+            // 更新並存檔排行榜
             TrialSession currentSession = activeTrialSessions.get(name);
             if (currentSession != null) {
                 currentSession.markCompleted();
+                boolean solo = currentSession.isSolo();
+                TimeLeaderboardEntry timeEntry = new TimeLeaderboardEntry(
+                        name, currentSession.getParticipantNames(), elapsedMs
+                );
+                updateTimeLeaderboard(diff.name(), timeEntry, solo);
 
-                // 根據情況更新不同的排行榜
-                if (currentSession.isSolo()) {
-                    // 單人排行榜
-                    TimeLeaderboardEntry entry = new TimeLeaderboardEntry(
-                            name,
-                            currentSession.getParticipantNames(),
-                            elapsedMs
-                    );
-                    updateTimeLeaderboard(diff.name(), entry, true);
-                } else {
-                    // 多人排行榜
-                    TimeLeaderboardEntry entry = new TimeLeaderboardEntry(
-                            name,
-                            currentSession.getParticipantNames(),
-                            elapsedMs
-                    );
-                    updateTimeLeaderboard(diff.name(), entry, false);
-                }
-
-                // 更新擊殺排行榜
                 KillsLeaderboardEntry killsEntry = new KillsLeaderboardEntry(
-                        name,
-                        currentSession.getPlayerKillRecords()
+                        name, currentSession.getPlayerKillRecords()
                 );
                 updateKillsLeaderboard(diff.name(), killsEntry);
-
-                // 保存更新的排行榜
                 saveLeaderboards();
             }
 
-            // 廣播完成訊息，並顯示耗時
+            // 廣播完成訊息（動態顯示 finishCount）
             String finishMsg = String.format(
-                    "§6【試煉完成】恭喜，在%s難度的試煉副本已擊殺 300 隻怪物！ 耗時：%s\n§a排行榜已更新，可使用 /trialleaderboard solo/team/kills 查看",
-                    diffNameZh, timeStr
+                    "§6【試煉完成】恭喜，在%s難度的試煉副本已擊殺 %d 隻怪物！ 耗時：%s\n" +
+                            "§a排行榜已更新，可使用 /trialleaderboard solo/team/kills 查看",
+                    diffNameZh, finishCount, timeStr
             );
             world.getPlayers().forEach(p -> p.sendMessage(finishMsg));
 
-            // 重置計數與開始時間，以便下次重新開始
+            // 重置狀態
             worldKillCounts.remove(name);
             worldStartTimes.remove(name);
             activeTrialSessions.remove(name);
