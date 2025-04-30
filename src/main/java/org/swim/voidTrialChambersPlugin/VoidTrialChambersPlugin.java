@@ -674,6 +674,14 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         session.addParticipant(player);
         session.recordKill(player.getUniqueId());
 
+        // 每50個擊殺提醒一次（只傳給該世界所有玩家），但只到250
+        if (count % 50 == 0 && count <= 250) {
+            String msg = "§e本試煉已擊殺 " + count + " 隻怪物！";
+            for (Player p : world.getPlayers()) {
+                p.sendMessage(Component.text(msg));
+            }
+        }
+
         // 如果是第一次擊殺，記錄開始時間
         if (count == 1) {
             worldStartTimes.put(name, System.currentTimeMillis());
