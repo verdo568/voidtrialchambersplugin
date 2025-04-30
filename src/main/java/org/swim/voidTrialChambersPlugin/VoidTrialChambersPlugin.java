@@ -155,6 +155,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
 
         getLogger().info("Void Trial Chambers Plugin 已停用");
     }
+
     @SuppressWarnings("ResultOfMethodCallIgnored")
     private void setupLeaderboardFiles() {
 
