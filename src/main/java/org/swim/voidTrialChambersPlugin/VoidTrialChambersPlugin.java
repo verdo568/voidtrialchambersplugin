@@ -649,6 +649,15 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         if (!name.startsWith("trial_")) return;
         if (!(evt.getEntity() instanceof Monster)) return;
 
+        UUID owner = findWorldOwner(name);
+        if (owner == null) return;
+        TrialDifficulty diff = playerDifficulties.get(owner);
+        // 處理 HELL 與 JUDGMENT 難度
+        if (diff != TrialDifficulty.HELL && diff != TrialDifficulty.JUDGMENT) return;
+
+        // 取得難度中文名稱
+        String diffNameZh = diff == TrialDifficulty.HELL ? "地獄" : "吞夢噬念";
+
         // 1. 取得最後一次傷害事件
         EntityDamageEvent last = evt.getEntity().getLastDamageCause();
         if (!(last instanceof EntityDamageByEntityEvent dbe)) {
@@ -662,11 +671,6 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             return;
         }
 
-        UUID owner = findWorldOwner(name);
-        if (owner == null) return;
-        TrialDifficulty diff = playerDifficulties.get(owner);
-        if (diff != TrialDifficulty.HELL) return;
-
         // 增加計數
         int count = worldKillCounts.getOrDefault(name, 0) + 1;
         worldKillCounts.put(name, count);
@@ -678,7 +682,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
 
         // 每50個擊殺提醒一次（只傳給該世界所有玩家），但只到250
         if (count % 50 == 0 && count <= 250) {
-            String msg = "§e本試煉已擊殺 " + count + " 隻怪物！";
+            String msg = "§e本試煉（" + diffNameZh + "難度）已擊殺 " + count + " 隻怪物！";
             for (Player p : world.getPlayers()) {
                 p.sendMessage(Component.text(msg));
             }
@@ -736,7 +740,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
                     updateTimeLeaderboard(diff.name(), entry, false);
                 }
 
-                // 擊殺排行榜
+                // 更新擊殺排行榜
                 KillsLeaderboardEntry killsEntry = new KillsLeaderboardEntry(
                         name,
                         currentSession.getPlayerKillRecords()
@@ -748,11 +752,11 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             }
 
             // 廣播完成訊息，並顯示耗時
-            world.getPlayers().forEach(p ->
-                    p.sendMessage("§6【試煉完成】恭喜，在地獄難度的試煉副本已擊殺 300 隻怪物！" +
-                            " 耗時：" + timeStr + "\n" +
-                            "§a排行榜已更新，可使用 /trialleaderboard solo/team/kills 查看")
+            String finishMsg = String.format(
+                    "§6【試煉完成】恭喜，在%s難度的試煉副本已擊殺 300 隻怪物！ 耗時：%s\n§a排行榜已更新，可使用 /trialleaderboard solo/team/kills 查看",
+                    diffNameZh, timeStr
             );
+            world.getPlayers().forEach(p -> p.sendMessage(finishMsg));
 
             // 重置計數與開始時間，以便下次重新開始
             worldKillCounts.remove(name);
@@ -760,6 +764,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             activeTrialSessions.remove(name);
         }
     }
+
 
     private void updateKillsLeaderboard(String difficulty, KillsLeaderboardEntry entry) {
         List<KillsLeaderboardEntry> entries = killsLeaderboard.computeIfAbsent(difficulty, k -> new ArrayList<>());
@@ -860,8 +865,10 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         public List<EntityType> getMobs() {
             return switch (this) {
                 case NORMAL -> List.of(EntityType.ZOMBIE, EntityType.SKELETON, EntityType.SPIDER);
-                case HELL -> List.of(EntityType.ZOMBIE, EntityType.CREEPER, EntityType.ENDERMAN, EntityType.WITCH, EntityType.BOGGED, EntityType.STRAY, EntityType.PHANTOM, EntityType.CAVE_SPIDER, EntityType.CAVE_SPIDER, EntityType.ILLUSIONER, EntityType.PIGLIN_BRUTE);
-                case JUDGMENT -> List.of(EntityType.ZOMBIE, EntityType.ENDERMAN, EntityType.WITCH, EntityType.BOGGED, EntityType.STRAY, EntityType.PHANTOM, EntityType.CAVE_SPIDER, EntityType.CAVE_SPIDER, EntityType.ILLUSIONER, EntityType.PIGLIN_BRUTE);
+                case HELL ->
+                        List.of(EntityType.ZOMBIE, EntityType.CREEPER, EntityType.ENDERMAN, EntityType.WITCH, EntityType.BOGGED, EntityType.STRAY, EntityType.PHANTOM, EntityType.CAVE_SPIDER, EntityType.CAVE_SPIDER, EntityType.ILLUSIONER, EntityType.PIGLIN_BRUTE);
+                case JUDGMENT ->
+                        List.of(EntityType.ZOMBIE, EntityType.ENDERMAN, EntityType.WITCH, EntityType.BOGGED, EntityType.STRAY, EntityType.PHANTOM, EntityType.CAVE_SPIDER, EntityType.CAVE_SPIDER, EntityType.ILLUSIONER, EntityType.PIGLIN_BRUTE);
                 default -> List.of();
             };
         }
@@ -1085,7 +1092,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
 
             // 參數解析: 必須傳入 <單人|團隊|擊殺> <地獄|吞夢噬念>
             if (args.length < 2) {
-                player.sendMessage("§c用法: /trialleaderboard <單人|團隊|擊殺> <地獄|吞夢噬念>");
+                player.sendMessage("§c用法: /trialleaderboard <solo/team/kills> <地獄/吞夢噬念>");
                 return true;
             }
 
@@ -1096,7 +1103,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             String difficultyKey = DIFFICULTY_KEY_MAP.get(diffArg);
 
             if (typeKey == null || difficultyKey == null) {
-                player.sendMessage("§c用法: /trialleaderboard <單人|團隊|擊殺> <地獄|吞夢噬念>");
+                player.sendMessage("§c用法: /trialleaderboard <solo/team/kills> <地獄/吞夢噬念>");
                 return true;
             }
 
@@ -1170,7 +1177,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
                     .getOrDefault(difficultyKey.toUpperCase(), Collections.emptyList());
 
             String displayName = DIFFICULTY_DISPLAY.getOrDefault(difficultyKey, difficultyKey);
-            player.sendMessage("§6=========== §e擊殺排行榜（" + displayName + "）§6===========");
+            player.sendMessage("§6=========== §e累計擊殺排行榜（" + displayName + "）§6===========");
             if (entries.isEmpty()) {
                 player.sendMessage("§7暫無記錄");
                 return;
@@ -1230,7 +1237,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             if (current >= MAX_ACTIVE_MOBS) return;
 
             // 計算本波要刷多少
-            int desired ;
+            int desired;
             if (diff == TrialDifficulty.HELL) {
                 desired = rnd.nextInt(5) + 8; // 8–12
             } else if (diff == TrialDifficulty.JUDGMENT) {
