@@ -1438,6 +1438,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
                         completions.add(option);
                     }
                 }
+                completions.sort(Comparator.comparingInt(options::indexOf));
                 return completions;
             }
             return Collections.emptyList();
