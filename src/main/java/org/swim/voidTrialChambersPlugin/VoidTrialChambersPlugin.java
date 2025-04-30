@@ -46,7 +46,6 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
 
@@ -836,7 +835,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         EASY("簡單"),
         NORMAL("普通"),
         HELL("地獄"),
-        PURGATORY("煉獄");
+        JUDGMENT("吞夢噬念");
 
         private final String display;
 
@@ -862,7 +861,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             return switch (this) {
                 case NORMAL -> List.of(EntityType.ZOMBIE, EntityType.SKELETON, EntityType.SPIDER);
                 case HELL -> List.of(EntityType.ZOMBIE, EntityType.CREEPER, EntityType.ENDERMAN, EntityType.WITCH, EntityType.BOGGED, EntityType.STRAY, EntityType.PHANTOM, EntityType.CAVE_SPIDER, EntityType.CAVE_SPIDER, EntityType.ILLUSIONER, EntityType.PIGLIN_BRUTE);
-                case PURGATORY -> List.of(EntityType.ZOMBIE, EntityType.CREEPER, EntityType.ENDERMAN, EntityType.WITCH, EntityType.BOGGED, EntityType.STRAY, EntityType.PHANTOM, EntityType.CAVE_SPIDER, EntityType.CAVE_SPIDER, EntityType.ILLUSIONER, EntityType.PIGLIN_BRUTE);
+                case JUDGMENT -> List.of(EntityType.ZOMBIE, EntityType.ENDERMAN, EntityType.WITCH, EntityType.BOGGED, EntityType.STRAY, EntityType.PHANTOM, EntityType.CAVE_SPIDER, EntityType.CAVE_SPIDER, EntityType.ILLUSIONER, EntityType.PIGLIN_BRUTE);
                 default -> List.of();
             };
         }
@@ -1055,7 +1054,27 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         }
     }
 
-    private class LeaderboardCommand implements CommandExecutor, TabCompleter {
+    public class LeaderboardCommand implements CommandExecutor, TabCompleter {
+
+        // 中英文對應到內部類型
+        private static final Map<String, String> TYPE_KEY_MAP = Map.of(
+                "solo", "solo",
+                "team", "team",
+                "kills", "kills"
+        );
+
+        // 中英文對應到內部難度
+        private static final Map<String, String> DIFFICULTY_KEY_MAP = Map.of(
+                "地獄", "hell",
+                "吞夢噬念", "judgment"
+        );
+
+        // 顯示用中文名稱
+        private static final Map<String, String> DIFFICULTY_DISPLAY = Map.of(
+                "hell", "地獄",
+                "judgment", "吞夢噬念"
+        );
+
         @Override
         public boolean onCommand(@NotNull CommandSender sender, @NotNull Command cmd,
                                  @NotNull String label, @NotNull String @NotNull [] args) {
@@ -1064,23 +1083,28 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
                 return true;
             }
 
-            // 預設顯示地獄難度的排行榜
-            String type = args.length > 0 ? args[0].toLowerCase() : "solo";
-
-            switch (type) {
-                case "solo":
-                    showSoloTimeLeaderboard(player);
-                    break;
-                case "team":
-                    showTeamTimeLeaderboard(player);
-                    break;
-                case "kills":
-                    showKillsLeaderboard(player);
-                    break;
-                default:
-                    player.sendMessage("§c未知的排行榜類型。用法: /trialleaderboard solo/team/kills");
+            // 參數解析: 必須傳入 <單人|團隊|擊殺> <地獄|吞夢噬念>
+            if (args.length < 2) {
+                player.sendMessage("§c用法: /trialleaderboard <單人|團隊|擊殺> <地獄|吞夢噬念>");
+                return true;
             }
 
+            String typeArg = args[0];
+            String diffArg = args[1];
+
+            String typeKey = TYPE_KEY_MAP.get(typeArg.toLowerCase());
+            String difficultyKey = DIFFICULTY_KEY_MAP.get(diffArg);
+
+            if (typeKey == null || difficultyKey == null) {
+                player.sendMessage("§c用法: /trialleaderboard <單人|團隊|擊殺> <地獄|吞夢噬念>");
+                return true;
+            }
+
+            switch (typeKey) {
+                case "solo" -> showSoloTimeLeaderboard(player, difficultyKey);
+                case "team" -> showTeamTimeLeaderboard(player, difficultyKey);
+                case "kills" -> showKillsLeaderboard(player, difficultyKey);
+            }
             return true;
         }
 
@@ -1089,17 +1113,24 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
                                           @NotNull String alias, String[] args) {
             if (args.length == 1) {
                 String input = args[0].toLowerCase();
-                return Stream.of("solo", "team", "kills")
+                return TYPE_KEY_MAP.keySet().stream()
+                        .filter(s -> s.startsWith(input))
+                        .collect(Collectors.toList());
+            } else if (args.length == 2) {
+                String input = args[1].toLowerCase();
+                return DIFFICULTY_KEY_MAP.keySet().stream()
                         .filter(s -> s.startsWith(input))
                         .collect(Collectors.toList());
             }
             return Collections.emptyList();
         }
 
-        private void showSoloTimeLeaderboard(Player player) {
-            List<TimeLeaderboardEntry> entries = timeLeaderboardSolo.getOrDefault(TrialDifficulty.HELL.name(), Collections.emptyList());
+        private void showSoloTimeLeaderboard(Player player, String difficultyKey) {
+            List<TimeLeaderboardEntry> entries = timeLeaderboardSolo
+                    .getOrDefault(difficultyKey.toUpperCase(), Collections.emptyList());
 
-            player.sendMessage("§6=========== §e單人時間排行榜§6===========");
+            String displayName = DIFFICULTY_DISPLAY.getOrDefault(difficultyKey, difficultyKey);
+            player.sendMessage("§6=========== §e單人時間排行榜（" + displayName + "）§6===========");
             if (entries.isEmpty()) {
                 player.sendMessage("§7暫無記錄");
                 return;
@@ -1114,10 +1145,12 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             }
         }
 
-        private void showTeamTimeLeaderboard(Player player) {
-            List<TimeLeaderboardEntry> entries = timeLeaderboardTeam.getOrDefault(TrialDifficulty.HELL.name(), Collections.emptyList());
+        private void showTeamTimeLeaderboard(Player player, String difficultyKey) {
+            List<TimeLeaderboardEntry> entries = timeLeaderboardTeam
+                    .getOrDefault(difficultyKey.toUpperCase(), Collections.emptyList());
 
-            player.sendMessage("§6=========== §e團隊時間排行榜§6===========");
+            String displayName = DIFFICULTY_DISPLAY.getOrDefault(difficultyKey, difficultyKey);
+            player.sendMessage("§6=========== §e團隊時間排行榜（" + displayName + "）§6===========");
             if (entries.isEmpty()) {
                 player.sendMessage("§7暫無記錄");
                 return;
@@ -1132,10 +1165,12 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             }
         }
 
-        private void showKillsLeaderboard(Player player) {
-            List<KillsLeaderboardEntry> entries = killsLeaderboard.getOrDefault(TrialDifficulty.HELL.name(), Collections.emptyList());
+        private void showKillsLeaderboard(Player player, String difficultyKey) {
+            List<KillsLeaderboardEntry> entries = killsLeaderboard
+                    .getOrDefault(difficultyKey.toUpperCase(), Collections.emptyList());
 
-            player.sendMessage("§6=========== §e擊殺排行榜§6===========");
+            String displayName = DIFFICULTY_DISPLAY.getOrDefault(difficultyKey, difficultyKey);
+            player.sendMessage("§6=========== §e擊殺排行榜（" + displayName + "）§6===========");
             if (entries.isEmpty()) {
                 player.sendMessage("§7暫無記錄");
                 return;
@@ -1155,6 +1190,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             }
         }
     }
+
 
     private class WorldMobSpawnerTask {
         private static final int MAX_ACTIVE_MOBS = 300;
@@ -1197,8 +1233,8 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             int desired ;
             if (diff == TrialDifficulty.HELL) {
                 desired = rnd.nextInt(5) + 8; // 8–12
-            } else if (diff == TrialDifficulty.PURGATORY) {
-                desired = rnd.nextInt(10) + 15; // 15–24，煉獄難度更多怪
+            } else if (diff == TrialDifficulty.JUDGMENT) {
+                desired = rnd.nextInt(10) + 15; // 15–24，吞夢噬念難度更多怪
             } else {
                 desired = rnd.nextInt(3) + 4;  // 4–6
             }
@@ -1430,15 +1466,14 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         @Override
         public List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command command, @NotNull String alias, String[] args) {
             if (args.length == 1) {
-                List<String> options = Arrays.asList("煉獄","地獄", "普通", "簡單");
+                List<String> options = Arrays.asList("吞夢噬念", "地獄", "普通", "簡單");
                 String input = args[0];
                 List<String> completions = new ArrayList<>();
                 for (String option : options) {
                     if (option.startsWith(input)) {
-                        completions.add(option);
+                        completions.add(option); // 按 options 順序加入
                     }
                 }
-                completions.sort(Comparator.comparingInt(options::indexOf));
                 return completions;
             }
             return Collections.emptyList();
