@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.*;
 import org.bukkit.World.Environment;
 import org.bukkit.block.Bed;
@@ -24,12 +25,12 @@ import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.player.PlayerChangedWorldEvent;
-import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.event.world.PortalCreateEvent;
 import org.bukkit.generator.ChunkGenerator;
 import org.bukkit.generator.WorldInfo;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
@@ -358,34 +359,6 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         }
     }
 
-    @EventHandler
-    public void onPlayerQuit(PlayerQuitEvent event) {
-        Player player = event.getPlayer();
-        UUID uuid = player.getUniqueId();
-
-        // 如果玩家在試煉世界中登出
-        World world = player.getWorld();
-        if (world.getName().startsWith("trial_")) {
-            // 標記世界最後訪問時間
-            updateWorldAccess(world);
-
-            // 可選：立即清理資源
-            // 或者讓定期任務處理
-        }
-
-        // 清理冷卻進度條
-        BossBar bar = cooldownBars.remove(uuid);
-        if (bar != null) {
-            bar.removeAll();
-        }
-
-        // 取消相關任務
-        BukkitTask task = cooldownTasks.remove(uuid);
-        if (task != null) {
-            task.cancel();
-        }
-    }
-
     private void createSpawnPlatform(World world) {
         Location spawn = world.getSpawnLocation();
         int baseY = spawn.getBlockY() - 1;
@@ -670,7 +643,6 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         if (!(damager instanceof Player player)) {
             return;
         }
-
         // 增加計數
         int count = worldKillCounts.getOrDefault(name, 0) + 1;
         worldKillCounts.put(name, count);
@@ -868,7 +840,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
                 case HELL ->
                         List.of(EntityType.ZOMBIE, EntityType.CREEPER, EntityType.ENDERMAN, EntityType.WITCH, EntityType.BOGGED, EntityType.STRAY, EntityType.PHANTOM, EntityType.CAVE_SPIDER, EntityType.CAVE_SPIDER, EntityType.ILLUSIONER, EntityType.PIGLIN_BRUTE);
                 case JUDGMENT ->
-                        List.of(EntityType.ZOMBIE, EntityType.ENDERMAN, EntityType.WITCH, EntityType.BOGGED, EntityType.STRAY, EntityType.PHANTOM, EntityType.CAVE_SPIDER, EntityType.CAVE_SPIDER, EntityType.ILLUSIONER, EntityType.PIGLIN_BRUTE);
+                        List.of(EntityType.ZOMBIE, EntityType.ENDERMAN, EntityType.WITCH, EntityType.BOGGED, EntityType.STRAY, EntityType.CAVE_SPIDER, EntityType.CAVE_SPIDER, EntityType.ILLUSIONER, EntityType.PIGLIN_BRUTE, EntityType.BREEZE);
                 default -> List.of();
             };
         }
@@ -1199,12 +1171,15 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
     }
 
 
-    private class WorldMobSpawnerTask {
+    public class WorldMobSpawnerTask {
         private static final int MAX_ACTIVE_MOBS = 300;
         private final World world;
         private final TrialDifficulty diff;
         private final Random rnd = new Random();
         private BukkitTask task;
+
+        // Counter for waves, used for JUDGMENT difficulty effects
+        private int waveCount = 0;
 
         public WorldMobSpawnerTask(World world, TrialDifficulty diff) {
             this.world = world;
@@ -1212,7 +1187,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         }
 
         public void start() {
-            // 立刻執行一次，之後每 [3~5] 秒重複
+            // Execute immediately, then every [3~5] seconds
             task = new BukkitRunnable() {
                 @Override
                 public void run() {
@@ -1226,22 +1201,30 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
 
             List<EntityType> types = diff.getMobs();
             if (types.isEmpty()) {
-                // 簡單難度不刷怪
+                // Easy difficulty: no mobs
                 return;
             }
-            // 計算世界中目前的目標怪物數量
+
+            // Track wave count for JUDGMENT difficulty
+            waveCount++;
+            if (diff == TrialDifficulty.JUDGMENT && waveCount % 10 == 0) {
+                applyNegativeEffectsToSurvival();
+                spawnJudgmentBoss();
+            }
+
+            // Count current mobs of configured types
             long current = world.getEntities().stream()
                     .filter(e -> e instanceof LivingEntity)
-                    .filter(e -> diff.getMobs().contains(e.getType()))
+                    .filter(e -> types.contains(e.getType()))
                     .count();
             if (current >= MAX_ACTIVE_MOBS) return;
 
-            // 計算本波要刷多少
+            // Determine how many to spawn this wave
             int desired;
             if (diff == TrialDifficulty.HELL) {
                 desired = rnd.nextInt(5) + 8; // 8–12
             } else if (diff == TrialDifficulty.JUDGMENT) {
-                desired = rnd.nextInt(10) + 15; // 15–24，吞夢噬念難度更多怪
+                desired = rnd.nextInt(10) + 15; // 15–24
             } else {
                 desired = rnd.nextInt(3) + 4;  // 4–6
             }
@@ -1252,15 +1235,61 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
 
             int perPlayer = Math.max(1, toSpawn / players.size());
             for (Player p : players) {
-                // 只對生存模式玩家刷怪
                 if (p.getGameMode() != GameMode.SURVIVAL) continue;
                 spawnAroundPlayer(p, perPlayer);
             }
         }
 
+        private void applyNegativeEffectsToSurvival() {
+            // Duration in ticks (e.g., 200 ticks = 10 seconds)
+            int duration = 200;
+            // Amplifier levels (0 = level I)
+            List<PotionEffect> effects = Arrays.asList(
+                    new PotionEffect(PotionEffectType.SLOWNESS, duration, 2),
+                    new PotionEffect(PotionEffectType.WEAKNESS, duration, 3),
+                    new PotionEffect(PotionEffectType.HUNGER, duration, 2),
+                    new PotionEffect(PotionEffectType.DARKNESS, duration, 2),
+                    new PotionEffect(PotionEffectType.WITHER, duration, 2),
+                    new PotionEffect(PotionEffectType.UNLUCK, duration, 2),
+                    new PotionEffect(PotionEffectType.POISON, duration, 2)
+            );
+            for (Player p : world.getPlayers()) {
+                if (p.getGameMode() != GameMode.SURVIVAL) continue;
+                for (PotionEffect effect : effects) {
+                    p.addPotionEffect(effect);
+                }
+            }
+        }
+
+        /**
+         * Spawns a Warden near a random survival-mode player on Judgment difficulty every 10th wave.
+         */
+        private void spawnJudgmentBoss() {
+            List<Player> survivors = world.getPlayers().stream()
+                    .filter(p -> p.getGameMode() == GameMode.SURVIVAL)
+                    .toList();
+            if (survivors.isEmpty()) return;
+            Player target = survivors.get(rnd.nextInt(survivors.size()));
+            Location spawnLoc = target.getLocation().clone().add(0, 1, 0);
+
+            // Chūnibyō announcement revolving around 吞夢噬念
+            String prefix = ("§5[吞夢噬念] ");
+            String line1 = ("§c黑夜低語，夢魘裂縫中蜿蜒……");
+            String line2 = ("§c伏守者甦醒，將你之靈魂雕刻於深淵！");
+            for (Player p : world.getPlayers()) {
+                p.sendMessage(prefix + line1);
+                p.sendMessage(prefix + line2);
+            }
+
+            Warden warden = (Warden) world.spawnEntity(spawnLoc, EntityType.WARDEN);
+            Component name = Component.text("吞夢者．噬念獄主").color(NamedTextColor.DARK_RED);
+            warden.customName(name);
+            warden.setCustomNameVisible(true);
+        }
+
         private void spawnAroundPlayer(Player p, int count) {
             List<EntityType> types = diff.getMobs();
-            if (types.isEmpty()) return;  // 简单难度直接退出
+            if (types.isEmpty()) return;  // Easy difficulty: skip
             int spawned = 0, tries = 0, maxTries = count * 5;
             Location base = p.getLocation();
 
@@ -1285,26 +1314,32 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         private boolean isSafeSpawnLocation(Location loc) {
             Block below = loc.clone().add(0, -1, 0).getBlock();
             if (!below.getType().isSolid()) return false;
-            for (int dx = -1; dx <= 1; dx++)
-                for (int dz = -1; dz <= 1; dz++)
+            for (int dx = -1; dx <= 1; dx++) {
+                for (int dz = -1; dz <= 1; dz++) {
                     for (int dy = 0; dy <= 1; dy++) {
                         if (loc.clone().add(dx, dy, dz).getBlock().getType() != Material.AIR)
                             return false;
                     }
+                }
+            }
             return true;
         }
 
         private boolean isNearVanillaBed(Location loc) {
-            World w = loc.getWorld();
-            for (int dx = -8; dx <= 8; dx++)
+            for (int dx = -8; dx <= 8; dx++) {
                 for (int dz = -8; dz <= 8; dz++) {
                     if (dx * dx + dz * dz > 64) continue;
-                    Block b = w.getBlockAt(
-                            loc.getBlockX() + dx, loc.getBlockY(), loc.getBlockZ() + dz
+                    Block b = world.getBlockAt(
+                            loc.getBlockX() + dx,
+                            loc.getBlockY(),
+                            loc.getBlockZ() + dz
                     );
-                    if (b.getState() instanceof Bed && !playerPlacedBeds.contains(b.getLocation()))
+                    if (b.getState() instanceof org.bukkit.block.Bed &&
+                            !playerPlacedBeds.contains(b.getLocation())) {
                         return true;
+                    }
                 }
+            }
             return false;
         }
 
@@ -1312,6 +1347,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             if (task != null) task.cancel();
         }
     }
+
 
     /**
      * /trialchambers 指令處理，重複執行前先刪除舊世界
