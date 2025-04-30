@@ -1178,7 +1178,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
 
             // Track wave count for JUDGMENT difficulty
             waveCount++;
-            if (diff == TrialDifficulty.JUDGMENT && waveCount % 10 == 0) {
+            if (diff == TrialDifficulty.JUDGMENT && waveCount % 5 == 0) {
                 applyNegativeEffectsToSurvival();
                 spawnJudgmentBoss();
             }
