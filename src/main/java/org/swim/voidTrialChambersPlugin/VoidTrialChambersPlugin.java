@@ -1430,7 +1430,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         @Override
         public List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command command, @NotNull String alias, String[] args) {
             if (args.length == 1) {
-                List<String> options = Arrays.asList("地獄", "普通", "簡單");
+                List<String> options = Arrays.asList("煉獄","地獄", "普通", "簡單");
                 String input = args[0];
                 List<String> completions = new ArrayList<>();
                 for (String option : options) {
