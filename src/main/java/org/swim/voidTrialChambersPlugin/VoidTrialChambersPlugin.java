@@ -92,7 +92,6 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
     // 擊殺數排行榜
     private File killsLeaderboardFile;
 
-
     @Override
     public void onEnable() {
         Bukkit.getPluginManager().registerEvents(this, this);
@@ -101,7 +100,10 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         setupLeaderboardFiles();
         loadLeaderboards();
         MonsterCleaner.startCleaningTask(this);
-        excludedWorldNames = getConfig().getStringList("excluded_worlds");
+        excludedWorldNames = getConfig().getStringList("excluded_worlds");    // trailtp 指令註冊
+        trailtp trailTeamCmd = new trailtp(this);
+        Objects.requireNonNull(getCommand("trailteam")).setExecutor(trailTeamCmd);
+        Objects.requireNonNull(getCommand("trailteam")).setTabCompleter(trailTeamCmd);
         TrialChambersCommand trialCmd = new TrialChambersCommand();
         Objects.requireNonNull(getCommand("trialchambers")).setExecutor(new TrialChambersCommand());
         Objects.requireNonNull(getCommand("exittrial")).setExecutor(new ExitTrialCommand());
@@ -153,7 +155,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
 
         getLogger().info("Void Trial Chambers Plugin 已停用");
     }
-
+    @SuppressWarnings("ResultOfMethodCallIgnored")
     private void setupLeaderboardFiles() {
 
         File dataFolder = getDataFolder();
