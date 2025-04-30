@@ -835,7 +835,8 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
     public enum TrialDifficulty {
         EASY("簡單"),
         NORMAL("普通"),
-        HELL("地獄");
+        HELL("地獄"),
+        PURGATORY("煉獄");
 
         private final String display;
 
@@ -860,8 +861,8 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         public List<EntityType> getMobs() {
             return switch (this) {
                 case NORMAL -> List.of(EntityType.ZOMBIE, EntityType.SKELETON, EntityType.SPIDER);
-                case HELL ->
-                        List.of(EntityType.ZOMBIE, EntityType.CREEPER, EntityType.ENDERMAN, EntityType.WITCH, EntityType.BOGGED, EntityType.STRAY, EntityType.PHANTOM, EntityType.CAVE_SPIDER, EntityType.CAVE_SPIDER, EntityType.ILLUSIONER, EntityType.PIGLIN_BRUTE);
+                case HELL -> List.of(EntityType.ZOMBIE, EntityType.CREEPER, EntityType.ENDERMAN, EntityType.WITCH, EntityType.BOGGED, EntityType.STRAY, EntityType.PHANTOM, EntityType.CAVE_SPIDER, EntityType.CAVE_SPIDER, EntityType.ILLUSIONER, EntityType.PIGLIN_BRUTE);
+                case PURGATORY -> List.of(EntityType.ZOMBIE, EntityType.CREEPER, EntityType.ENDERMAN, EntityType.WITCH, EntityType.BOGGED, EntityType.STRAY, EntityType.PHANTOM, EntityType.CAVE_SPIDER, EntityType.CAVE_SPIDER, EntityType.ILLUSIONER, EntityType.PIGLIN_BRUTE);
                 default -> List.of();
             };
         }
@@ -1193,9 +1194,14 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             if (current >= MAX_ACTIVE_MOBS) return;
 
             // 計算本波要刷多少
-            int desired = diff == TrialDifficulty.HELL
-                    ? rnd.nextInt(5) + 8// 8–12
-                    : rnd.nextInt(3) + 4;  // 4–6
+            int desired ;
+            if (diff == TrialDifficulty.HELL) {
+                desired = rnd.nextInt(5) + 8; // 8–12
+            } else if (diff == TrialDifficulty.PURGATORY) {
+                desired = rnd.nextInt(10) + 15; // 15–24，煉獄難度更多怪
+            } else {
+                desired = rnd.nextInt(3) + 4;  // 4–6
+            }
             int toSpawn = Math.min(desired, MAX_ACTIVE_MOBS - (int) current);
 
             List<Player> players = world.getPlayers();
