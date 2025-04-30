@@ -18,6 +18,9 @@ commands:
     description: 查看試煉副本排行榜
     usage: /<command> [solo|team|kills] [EASY|NORMAL|HELL]
 
+  trailteam:
+    description: 試煉副本邀請系統
+
 permissions:
   trialchambers.use:
     description: Allows player to use the /trialchambers command

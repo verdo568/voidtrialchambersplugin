@@ -74,7 +74,7 @@ public class trailtp implements CommandExecutor, TabCompleter {
                     return true;
                 }
                 World trialWorld = inviter.getWorld();
-                player.teleport(trialWorld.getSpawnLocation()); // 或 inviter.getLocation()
+                player.teleport(inviter.getLocation());
                 player.sendMessage("§a你已接受邀請，被傳送進入試煉世界！");
                 inviter.sendMessage("§b" + player.getName() + " 已接受你的邀請並進入你的試煉世界。");
             }
