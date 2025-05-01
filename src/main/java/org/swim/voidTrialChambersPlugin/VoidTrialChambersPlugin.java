@@ -7,6 +7,8 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.*;
 import org.bukkit.World.Environment;
+import org.bukkit.attribute.Attribute;
+import org.bukkit.attribute.AttributeInstance;
 import org.bukkit.block.Bed;
 import org.bukkit.block.Block;
 import org.bukkit.boss.BarColor;
@@ -1288,8 +1290,28 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
                 if (!isSafeSpawnLocation(loc) || isNearVanillaBed(loc)) continue;
 
                 EntityType type = types.get(rnd.nextInt(types.size()));
-                world.spawnEntity(loc, type)
-                        .setCustomNameVisible(false);
+                LivingEntity mob = (LivingEntity) world.spawnEntity(loc, type);
+                mob.setCustomNameVisible(false);
+                // JUDGMENT 难度下附加：力量 III 与 抗性 II
+                if (diff == TrialDifficulty.JUDGMENT) {
+                    mob.addPotionEffect(new PotionEffect(
+                            PotionEffectType.STRENGTH,
+                            Integer.MAX_VALUE,
+                            2
+                    ));
+                    mob.addPotionEffect(new PotionEffect(
+                            PotionEffectType.RESISTANCE,
+                            Integer.MAX_VALUE,
+                            1
+                    ));
+                    //最大生命值提升 +10 颗心（+20 HP）
+                    AttributeInstance healthAttr = mob.getAttribute(Attribute.MAX_HEALTH);
+                    if (healthAttr != null) {
+                        double newMax = healthAttr.getBaseValue() + 20.0;
+                        healthAttr.setBaseValue(newMax);
+                        mob.setHealth(newMax);
+                    }
+                }
                 spawned++;
             }
         }
