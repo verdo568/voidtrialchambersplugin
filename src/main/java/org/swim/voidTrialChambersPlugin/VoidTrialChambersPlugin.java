@@ -683,7 +683,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             return switch (this) {
                 case NORMAL -> List.of(EntityType.ZOMBIE, EntityType.SKELETON, EntityType.SPIDER);
                 case HELL -> List.of(EntityType.ZOMBIE, EntityType.CREEPER, EntityType.ENDERMAN, EntityType.WITCH, EntityType.BOGGED, EntityType.STRAY, EntityType.PHANTOM, EntityType.CAVE_SPIDER, EntityType.CAVE_SPIDER, EntityType.ILLUSIONER, EntityType.PIGLIN_BRUTE);
-                case JUDGMENT -> List.of(EntityType.ZOMBIE, EntityType.ENDERMAN, EntityType.WITCH, EntityType.BOGGED, EntityType.STRAY, EntityType.CAVE_SPIDER, EntityType.CAVE_SPIDER, EntityType.ILLUSIONER, EntityType.PIGLIN_BRUTE, EntityType.BREEZE);
+                case JUDGMENT -> List.of(EntityType.ZOMBIE, EntityType.ENDERMAN, EntityType.WITCH, EntityType.BOGGED, EntityType.STRAY, EntityType.CAVE_SPIDER, EntityType.ILLUSIONER, EntityType.PIGLIN_BRUTE, EntityType.BREEZE);
                 default -> List.of();
             };
         }
