@@ -559,7 +559,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         }
 
         // 2. 動態設定結束目標：Judgment 要 500，Hell 要 300
-        int finishCount = diff == TrialDifficulty.JUDGMENT ? 5 : 3;
+        int finishCount = diff == TrialDifficulty.JUDGMENT ? 500 : 300;
         if (count >= finishCount) {
             long start = worldStartTimes.getOrDefault(name, System.currentTimeMillis());
             long elapsedMs = System.currentTimeMillis() - start;
@@ -682,10 +682,8 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         public List<EntityType> getMobs() {
             return switch (this) {
                 case NORMAL -> List.of(EntityType.ZOMBIE, EntityType.SKELETON, EntityType.SPIDER);
-                case HELL ->
-                        List.of(EntityType.ZOMBIE, EntityType.CREEPER, EntityType.ENDERMAN, EntityType.WITCH, EntityType.BOGGED, EntityType.STRAY, EntityType.PHANTOM, EntityType.CAVE_SPIDER, EntityType.CAVE_SPIDER, EntityType.ILLUSIONER, EntityType.PIGLIN_BRUTE);
-                case JUDGMENT ->
-                        List.of(EntityType.ZOMBIE, EntityType.ENDERMAN, EntityType.WITCH, EntityType.BOGGED, EntityType.STRAY, EntityType.CAVE_SPIDER, EntityType.CAVE_SPIDER, EntityType.ILLUSIONER, EntityType.PIGLIN_BRUTE, EntityType.BREEZE);
+                case HELL -> List.of(EntityType.ZOMBIE, EntityType.CREEPER, EntityType.ENDERMAN, EntityType.WITCH, EntityType.BOGGED, EntityType.STRAY, EntityType.PHANTOM, EntityType.CAVE_SPIDER, EntityType.CAVE_SPIDER, EntityType.ILLUSIONER, EntityType.PIGLIN_BRUTE);
+                case JUDGMENT -> List.of(EntityType.ZOMBIE, EntityType.ENDERMAN, EntityType.WITCH, EntityType.BOGGED, EntityType.STRAY, EntityType.CAVE_SPIDER, EntityType.CAVE_SPIDER, EntityType.ILLUSIONER, EntityType.PIGLIN_BRUTE, EntityType.BREEZE);
                 default -> List.of();
             };
         }
@@ -748,7 +746,6 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             }
             return records;
         }
-        // ────────────────────────────────────────────
 
         public void markCompleted() {
             this.completed = true;
@@ -918,6 +915,19 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
                 for (int i = 0; i < bossNames.size(); i++) {
                     // 輕微偏移位置，避免重疊
                     Location spawnLoc = base.clone().add((i - 0.5) * 1.5, 0, 0);
+                    Block above = spawnLoc.clone().add(0, 1, 0).getBlock();
+                    if (!above.getType().isAir()) {
+                        above.setType(Material.AIR);
+                    }
+                    // 破壞召喚點上方 3x3 區域的方塊，避免 Warden 生成時窒息
+                    for (int dx = -1; dx <= 1; dx++) {
+                        for (int dz = -1; dz <= 1; dz++) {
+                            Block b = spawnLoc.clone().add(dx, 1, dz).getBlock();
+                            if (!b.getType().isAir()) {
+                                b.setType(Material.AIR);
+                            }
+                        }
+                    }
                     Warden warden = (Warden) world.spawnEntity(spawnLoc, EntityType.WARDEN);
                     warden.customName(bossNames.get(i));
                     warden.setCustomNameVisible(true);
