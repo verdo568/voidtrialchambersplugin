@@ -1251,15 +1251,25 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
                 p.sendMessage(prefix + line2);
             }
 
-            // 在每個生存玩家上方生成 Warden
+            // 定義兩隻 Warden 的名字
+            List<Component> bossNames = List.of(
+                    Component.text("吞夢者．噬念獄主").color(NamedTextColor.DARK_RED),
+                    Component.text("深淵覺醒者．裂縫裁決").color(NamedTextColor.DARK_PURPLE)
+            );
+
+            // 在每個生存玩家上方生成兩隻 Warden，並賦予不同名字
             for (Player target : survivors) {
-                Location spawnLoc = target.getLocation().clone().add(0, 1, 0);
-                Warden warden = (Warden) world.spawnEntity(spawnLoc, EntityType.WARDEN);
-                Component name = Component.text("吞夢者．噬念獄主").color(NamedTextColor.DARK_RED);
-                warden.customName(name);
-                warden.setCustomNameVisible(true);
+                Location base = target.getLocation().clone().add(0, 1, 0);
+                for (int i = 0; i < bossNames.size(); i++) {
+                    // 輕微偏移位置，避免重疊
+                    Location spawnLoc = base.clone().add((i - 0.5) * 1.5, 0, 0);
+                    Warden warden = (Warden) world.spawnEntity(spawnLoc, EntityType.WARDEN);
+                    warden.customName(bossNames.get(i));
+                    warden.setCustomNameVisible(true);
+                }
             }
         }
+
 
 
         private void spawnAroundPlayer(Player p, int count) {
