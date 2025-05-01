@@ -915,16 +915,15 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
                 for (int i = 0; i < bossNames.size(); i++) {
                     // 輕微偏移位置，避免重疊
                     Location spawnLoc = base.clone().add((i - 0.5) * 1.5, 0, 0);
-                    Block above = spawnLoc.clone().add(0, 1, 0).getBlock();
-                    if (!above.getType().isAir()) {
-                        above.setType(Material.AIR);
-                    }
-                    // 破壞召喚點上方 3x3 區域的方塊，避免 Warden 生成時窒息
                     for (int dx = -1; dx <= 1; dx++) {
-                        for (int dz = -1; dz <= 1; dz++) {
-                            Block b = spawnLoc.clone().add(dx, 1, dz).getBlock();
-                            if (!b.getType().isAir()) {
-                                b.setType(Material.AIR);
+                        for (int dy = -1; dy <= 1; dy++) {
+                            for (int dz = -1; dz <= 1; dz++) {
+                                // 保留腳下中心方塊 (dx=0, dy=-1, dz=0)
+                                if (dx == 0 && dy == -1 && dz == 0) continue;
+                                Block b = spawnLoc.clone().add(dx, dy, dz).getBlock();
+                                if (!b.getType().isAir()) {
+                                    b.setType(Material.AIR);
+                                }
                             }
                         }
                     }
@@ -960,12 +959,12 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
                     mob.addPotionEffect(new PotionEffect(
                             PotionEffectType.STRENGTH,
                             Integer.MAX_VALUE,
-                            2
+                            3
                     ));
                     mob.addPotionEffect(new PotionEffect(
                             PotionEffectType.RESISTANCE,
                             Integer.MAX_VALUE,
-                            1
+                            2
                     ));
                     //最大生命值提升 +10 颗心（+20 HP）
                     AttributeInstance healthAttr = mob.getAttribute(Attribute.MAX_HEALTH);
