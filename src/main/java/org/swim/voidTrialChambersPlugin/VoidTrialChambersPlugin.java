@@ -1178,7 +1178,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
 
             // Track wave count for JUDGMENT difficulty
             waveCount++;
-            if (diff == TrialDifficulty.JUDGMENT && waveCount % 8 == 0) {
+            if (diff == TrialDifficulty.JUDGMENT && waveCount % 6 == 0) {
                 applyNegativeEffectsToSurvival();
                 spawnJudgmentBoss();
             }
@@ -1233,30 +1233,34 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         }
 
         /**
-         * Spawns a Warden near a random survival-mode player on Judgment difficulty every 10th wave.
+         * Spawns a Warden near every survival-mode player on Judgment difficulty every 10th wave.
          */
         private void spawnJudgmentBoss() {
+            // 收集所有生存模式的玩家
             List<Player> survivors = world.getPlayers().stream()
                     .filter(p -> p.getGameMode() == GameMode.SURVIVAL)
                     .toList();
             if (survivors.isEmpty()) return;
-            Player target = survivors.get(rnd.nextInt(survivors.size()));
-            Location spawnLoc = target.getLocation().clone().add(0, 1, 0);
 
-            // Chūnibyō announcement revolving around 吞夢噬念
-            String prefix = ("§5[吞夢噬念] ");
-            String line1 = ("§c黑夜低語，夢魘裂縫中蜿蜒……");
-            String line2 = ("§c伏守者甦醒，將你之靈魂雕刻於深淵！");
+            // 中二風格的 BOSS 登場公告
+            String prefix = "§5[吞夢噬念] ";
+            String line1 = "§c黑夜低語，夢魘裂縫中蜿蜒……";
+            String line2 = "§c伏守者甦醒，將你之靈魂雕刻於深淵！";
             for (Player p : world.getPlayers()) {
                 p.sendMessage(prefix + line1);
                 p.sendMessage(prefix + line2);
             }
 
-            Warden warden = (Warden) world.spawnEntity(spawnLoc, EntityType.WARDEN);
-            Component name = Component.text("吞夢者．噬念獄主").color(NamedTextColor.DARK_RED);
-            warden.customName(name);
-            warden.setCustomNameVisible(true);
+            // 在每個生存玩家上方生成 Warden
+            for (Player target : survivors) {
+                Location spawnLoc = target.getLocation().clone().add(0, 1, 0);
+                Warden warden = (Warden) world.spawnEntity(spawnLoc, EntityType.WARDEN);
+                Component name = Component.text("吞夢者．噬念獄主").color(NamedTextColor.DARK_RED);
+                warden.customName(name);
+                warden.setCustomNameVisible(true);
+            }
         }
+
 
         private void spawnAroundPlayer(Player p, int count) {
             List<EntityType> types = diff.getMobs();
