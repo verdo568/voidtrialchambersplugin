@@ -100,6 +100,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         saveDefaultConfig();
         reloadConfig();
         setupLeaderboardFiles();
+        getServer().getPluginManager().registerEvents(new WardenTargetFilter(), this);
         loadLeaderboards();
         MonsterCleaner.startCleaningTask(this);
         excludedWorldNames = getConfig().getStringList("excluded_worlds");    // trailtp 指令註冊
@@ -1180,7 +1181,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
 
             // Track wave count for JUDGMENT difficulty
             waveCount++;
-            if (diff == TrialDifficulty.JUDGMENT && waveCount % 7 == 0) {
+            if (diff == TrialDifficulty.JUDGMENT && waveCount % 20 == 0) {
                 applyNegativeEffectsToSurvival();
                 spawnJudgmentBoss();
             }
