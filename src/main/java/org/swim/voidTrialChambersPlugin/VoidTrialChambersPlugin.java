@@ -878,6 +878,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             );
             for (Player p : world.getPlayers()) {
                 if (p.getGameMode() != GameMode.SURVIVAL) continue;
+                if (isNearVanillaBed(p.getLocation())) continue;
                 for (PotionEffect effect : effects) {
                     p.addPotionEffect(effect);
                 }
@@ -891,6 +892,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             // 收集所有生存模式的玩家
             List<Player> survivors = world.getPlayers().stream()
                     .filter(p -> p.getGameMode() == GameMode.SURVIVAL)
+                    .filter(p -> !isNearVanillaBed(p.getLocation()))
                     .toList();
             if (survivors.isEmpty()) return;
 
