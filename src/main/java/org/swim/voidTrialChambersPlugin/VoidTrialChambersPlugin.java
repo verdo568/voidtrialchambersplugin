@@ -24,7 +24,6 @@ import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.player.PlayerChangedWorldEvent;
-import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.event.world.PortalCreateEvent;
 import org.bukkit.generator.ChunkGenerator;
 import org.bukkit.generator.WorldInfo;
@@ -628,23 +627,6 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         return null;
     }
 
-    @EventHandler
-    public void onPlayerRespawn(PlayerRespawnEvent evt) {
-        Player p = evt.getPlayer();
-        String worldName = p.getWorld().getName();
-        if (excludedWorldNames.contains(worldName)) {
-            return;
-        }
-        World main = Bukkit.getWorld("world");
-        if (main != null) {
-            evt.setRespawnLocation(main.getSpawnLocation());
-            p.sendMessage("§6你已重生於主世界重生點！");
-            UUID uid = p.getUniqueId();
-            World w = playerTrialWorlds.remove(uid);
-            clearEntityAndPoiFolders(w);
-        }
-    }
-
     @Override
     public ChunkGenerator getDefaultWorldGenerator(@NotNull String worldName, String id) {
         return new VoidChunkGenerator();
@@ -895,7 +877,6 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
                     .filter(p -> !isNearVanillaBed(p.getLocation()))
                     .toList();
             if (survivors.isEmpty()) return;
-
             // 中二風格的 BOSS 登場公告
             String prefix = "§5[吞夢噬念] ";
             String line1 = "§c黑夜低語，夢魘裂縫中蜿蜒……";
