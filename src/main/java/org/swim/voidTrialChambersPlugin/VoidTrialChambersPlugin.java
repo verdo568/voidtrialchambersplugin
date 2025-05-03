@@ -1015,9 +1015,11 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             long now = System.currentTimeMillis();
             long last = trialCooldowns.getOrDefault(uid, 0L);
             long elapsed = now - last;
+            List<String> argList = new ArrayList<>(Arrays.asList(args));
+            boolean bypassCooldown = player.isOp() && argList.remove("skip");
             boolean isBedrock = FloodgateApi.getInstance().isFloodgatePlayer(uid);
 
-            if (elapsed < COOLDOWN_MS) {
+            if (elapsed < COOLDOWN_MS && !bypassCooldown) {
                 long remaining = COOLDOWN_MS - elapsed;
                 long minutesLeft = remaining / 60000;
                 long secondsLeft = (remaining % 60000 + 999) / 1000;
@@ -1066,8 +1068,11 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
                 }
                 return true;
             }
-
-            String input = args.length > 0 ? args[0] : "普通";
+            if (bypassCooldown) {
+                player.sendMessage("§aOP 已跳過指令冷卻");
+            }
+            String[] filteredArgs = argList.toArray(new String[0]);
+            String input = filteredArgs.length > 0 ? filteredArgs[0] : "普通";
             TrialDifficulty diff = TrialDifficulty.from(input);
             if (diff == null) {
                 player.sendMessage("§c無效難度，請輸入 簡單/普通/地獄");
