@@ -16,8 +16,7 @@ public class BedProtectionListener implements Listener {
     @EventHandler
     public void onBedPlace(BlockPlaceEvent event) {
         World world = event.getBlockPlaced().getWorld();
-        if (world.getName().startsWith("trial_")
-                && event.getBlockPlaced().getState() instanceof Bed) {
+        if (world.getName().startsWith("trial_") && event.getBlockPlaced().getState() instanceof Bed) {
             event.setCancelled(true);
         }
     }
@@ -26,8 +25,7 @@ public class BedProtectionListener implements Listener {
     @EventHandler
     public void onBedBreak(BlockBreakEvent event) {
         String worldName = event.getBlock().getWorld().getName();
-        if (worldName.startsWith("trial_")
-                && event.getBlock().getState() instanceof Bed) {
+        if (worldName.startsWith("trial_") && event.getBlock().getState() instanceof Bed) {
             event.setCancelled(true);
         }
     }
@@ -54,8 +52,7 @@ public class BedProtectionListener implements Listener {
     @EventHandler
     public void onEntityExplode(EntityExplodeEvent event) {
         if (event.getLocation().getWorld().getName().startsWith("trial_")) {
-            event.blockList().removeIf(b ->
-                    b.getState() instanceof Bed
+            event.blockList().removeIf(b -> b.getState() instanceof Bed
             );
         }
     }
