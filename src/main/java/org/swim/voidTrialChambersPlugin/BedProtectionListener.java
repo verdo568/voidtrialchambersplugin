@@ -52,7 +52,8 @@ public class BedProtectionListener implements Listener {
     @EventHandler
     public void onEntityExplode(EntityExplodeEvent event) {
         if (event.getLocation().getWorld().getName().startsWith("trial_")) {
-            event.blockList().removeIf(b -> b.getState() instanceof Bed
+            event.blockList().removeIf(b ->
+                    b.getState() instanceof Bed
             );
         }
     }
