@@ -3,7 +3,6 @@ package org.swim.voidTrialChambersPlugin;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.*;
-import org.bukkit.World.Environment;
 import org.bukkit.attribute.Attribute;
 import org.bukkit.attribute.AttributeInstance;
 import org.bukkit.block.Bed;
@@ -67,7 +66,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
     // 新增：世界最後訪問時間
     private final Map<String, Long> worldLastAccessed = new ConcurrentHashMap<>();
     //每個試煉世界當前的擊殺數
-        private final Map<String, Integer> worldKillCounts = new ConcurrentHashMap<>();
+    private final Map<String, Integer> worldKillCounts = new ConcurrentHashMap<>();
     // 每個試煉世界的開始時間（毫秒）
     private final Map<String, Long> worldStartTimes = new ConcurrentHashMap<>();
     // 目前正在進行的試煉會話
@@ -153,7 +152,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
 
         // 使用 CompletableFuture 非同步創建世界
         WorldCreator creator = new WorldCreator(worldName)
-                .environment(Environment.NORMAL)
+                .environment(World.Environment.NORMAL)
                 .generator(new VoidChunkGenerator());
 
         // 創建世界
@@ -665,8 +664,10 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         public List<EntityType> getMobs() {
             return switch (this) {
                 case NORMAL -> List.of(EntityType.ZOMBIE, EntityType.SKELETON, EntityType.SPIDER);
-                case HELL -> List.of(EntityType.ZOMBIE, EntityType.CREEPER, EntityType.ENDERMAN, EntityType.WITCH, EntityType.BOGGED, EntityType.STRAY, EntityType.PHANTOM, EntityType.CAVE_SPIDER, EntityType.CAVE_SPIDER, EntityType.ILLUSIONER, EntityType.PIGLIN_BRUTE);
-                case JUDGMENT -> List.of(EntityType.ZOMBIE, EntityType.ENDERMAN, EntityType.WITCH, EntityType.BOGGED, EntityType.STRAY, EntityType.CAVE_SPIDER, EntityType.ILLUSIONER, EntityType.PIGLIN_BRUTE, EntityType.BREEZE);
+                case HELL ->
+                        List.of(EntityType.ZOMBIE, EntityType.CREEPER, EntityType.ENDERMAN, EntityType.WITCH, EntityType.BOGGED, EntityType.STRAY, EntityType.PHANTOM, EntityType.CAVE_SPIDER, EntityType.CAVE_SPIDER, EntityType.ILLUSIONER, EntityType.PIGLIN_BRUTE);
+                case JUDGMENT ->
+                        List.of(EntityType.ZOMBIE, EntityType.ENDERMAN, EntityType.WITCH, EntityType.BOGGED, EntityType.STRAY, EntityType.CAVE_SPIDER, EntityType.ILLUSIONER, EntityType.PIGLIN_BRUTE, EntityType.BREEZE);
                 default -> List.of();
             };
         }
@@ -787,6 +788,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
 
         // Counter for waves, used for JUDGMENT difficulty effects
         private int waveCount = 0;
+
         public WorldMobSpawnerTask(World world, TrialDifficulty diff) {
             this.world = world;
             this.diff = diff;
