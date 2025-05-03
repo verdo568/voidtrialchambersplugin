@@ -83,11 +83,11 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         trailtp trailTeamCmd = new trailtp(this);
         saveDefaultConfig();
         reloadConfig();
+        leaderboardManager = new LeaderboardManager(this);
         TrialChambersCommand trialCmd = new TrialChambersCommand();
         LeaderboardCommand lbCmd = new LeaderboardCommand(leaderboardManager);
         getServer().getPluginManager().registerEvents(new WardenTargetFilter(), this);
         Bukkit.getPluginManager().registerEvents(new BedProtectionListener(), this);
-        leaderboardManager = new LeaderboardManager(this);
         excludedWorldNames = getConfig().getStringList("excluded_worlds");
         Objects.requireNonNull(getCommand("trailteam")).setExecutor(trailTeamCmd);
         Objects.requireNonNull(getCommand("trailteam")).setTabCompleter(trailTeamCmd);
