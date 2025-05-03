@@ -12,10 +12,11 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class trailtp implements CommandExecutor, TabCompleter {
     // 存放邀請資料 (被邀請者UUID, 邀請者UUID)
-    private final Map<UUID, UUID> pendingInvites = new HashMap<>();
+    private final Map<UUID, UUID> pendingInvites = new ConcurrentHashMap<>();
 
     public trailtp(JavaPlugin plugin) {
     }

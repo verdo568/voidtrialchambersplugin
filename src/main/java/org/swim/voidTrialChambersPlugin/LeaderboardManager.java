@@ -11,6 +11,7 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.lang.reflect.Type;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 負責排行榜資料的載入/儲存與更新
@@ -20,9 +21,9 @@ public class LeaderboardManager {
     private final File teamTimeFile;
     private final File killsFile;
 
-    private final Map<String, List<TimeLeaderboardEntry>> timeLeaderboardSolo = new HashMap<>();
-    private final Map<String, List<TimeLeaderboardEntry>> timeLeaderboardTeam = new HashMap<>();
-    private final Map<String, List<KillsLeaderboardEntry>> killsLeaderboard = new HashMap<>();
+    private final Map<String, List<TimeLeaderboardEntry>> timeLeaderboardSolo = new ConcurrentHashMap<>();
+    private final Map<String, List<TimeLeaderboardEntry>> timeLeaderboardTeam = new ConcurrentHashMap<>();
+    private final Map<String, List<KillsLeaderboardEntry>> killsLeaderboard = new ConcurrentHashMap<>();
 
     private final Gson gson = new GsonBuilder().setPrettyPrinting().create();
 
