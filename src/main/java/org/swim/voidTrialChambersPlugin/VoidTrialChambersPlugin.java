@@ -80,21 +80,22 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
     @Override
     public void onEnable() {
         Bukkit.getPluginManager().registerEvents(this, this);
+        MonsterCleaner.startCleaningTask(this);
+        trailtp trailTeamCmd = new trailtp(this);
         saveDefaultConfig();
         reloadConfig();
-        leaderboardManager = new LeaderboardManager(this);
+        TrialChambersCommand trialCmd = new TrialChambersCommand();
+        LeaderboardCommand lbCmd = new LeaderboardCommand(leaderboardManager);
         getServer().getPluginManager().registerEvents(new WardenTargetFilter(), this);
-        MonsterCleaner.startCleaningTask(this);
-        excludedWorldNames = getConfig().getStringList("excluded_worlds");    // trailtp 指令註冊
-        trailtp trailTeamCmd = new trailtp(this);
+        Bukkit.getPluginManager().registerEvents(new BedProtectionListener(), this);
+        leaderboardManager = new LeaderboardManager(this);
+        excludedWorldNames = getConfig().getStringList("excluded_worlds");
         Objects.requireNonNull(getCommand("trailteam")).setExecutor(trailTeamCmd);
         Objects.requireNonNull(getCommand("trailteam")).setTabCompleter(trailTeamCmd);
-        TrialChambersCommand trialCmd = new TrialChambersCommand();
-        Objects.requireNonNull(getCommand("trialchambers")).setExecutor(new TrialChambersCommand());
-        Objects.requireNonNull(getCommand("exittrial")).setExecutor(new ExitTrialCommand());
-        LeaderboardCommand lbCmd = new LeaderboardCommand(leaderboardManager);
         Objects.requireNonNull(getCommand("trialleaderboard")).setExecutor(lbCmd);
         Objects.requireNonNull(getCommand("trialleaderboard")).setTabCompleter(lbCmd);
+        Objects.requireNonNull(getCommand("trialchambers")).setExecutor(new TrialChambersCommand());
+        Objects.requireNonNull(getCommand("exittrial")).setExecutor(new ExitTrialCommand());
         // 註冊定期清理任務，每5分鐘執行一次
         new BukkitRunnable() {
             @Override
