@@ -1,6 +1,5 @@
 package org.swim.voidTrialChambersPlugin;
 
-import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Bed;
 import org.bukkit.event.EventHandler;
@@ -23,25 +22,22 @@ public class BedProtectionListener implements Listener {
         }
     }
 
-    // 只在 trial_ 開頭的世界中禁止破壞床和 tuff_bricks
+    // 只在 trial_ 開頭的世界中禁止破壞床
     @EventHandler
     public void onBedBreak(BlockBreakEvent event) {
         String worldName = event.getBlock().getWorld().getName();
-        if (worldName.startsWith("trial_")) {
-            if (event.getBlock().getState() instanceof Bed
-             || event.getBlock().getType() == Material.TUFF_BRICKS) {
-                event.setCancelled(true);
-            }
+        if (worldName.startsWith("trial_")
+                && event.getBlock().getState() instanceof Bed) {
+            event.setCancelled(true);
         }
     }
 
-    // 禁止活塞推動床和 tuff_bricks
+    // 禁止活塞推動床
     @EventHandler
     public void onPistonExtend(BlockPistonExtendEvent event) {
         if (event.getBlock().getWorld().getName().startsWith("trial_")) {
             for (var b : event.getBlocks()) {
-                if (b.getState() instanceof Bed
-                 || b.getType() == Material.TUFF_BRICKS) {
+                if (b.getState() instanceof Bed) {
                     event.setCancelled(true);
                     return;
                 }
@@ -53,8 +49,7 @@ public class BedProtectionListener implements Listener {
     public void onPistonRetract(BlockPistonRetractEvent event) {
         if (event.getBlock().getWorld().getName().startsWith("trial_")) {
             for (var b : event.getBlocks()) {
-                if (b.getState() instanceof Bed
-                 || b.getType() == Material.TUFF_BRICKS) {
+                if (b.getState() instanceof Bed) {
                     event.setCancelled(true);
                     return;
                 }
@@ -62,13 +57,12 @@ public class BedProtectionListener implements Listener {
         }
     }
 
-    // 禁止 TNT 或其他爆炸摧毀床和 tuff_bricks
+    // 禁止 TNT 或其他爆炸摧毀床
     @EventHandler
     public void onEntityExplode(EntityExplodeEvent event) {
         if (event.getLocation().getWorld().getName().startsWith("trial_")) {
             event.blockList().removeIf(b ->
-                b.getState() instanceof Bed
-             || b.getType() == Material.TUFF_BRICKS
+                    b.getState() instanceof Bed
             );
         }
     }
