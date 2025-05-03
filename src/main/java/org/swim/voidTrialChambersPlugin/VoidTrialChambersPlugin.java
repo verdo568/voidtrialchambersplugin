@@ -49,27 +49,27 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
     // 每個試煉世界的最大玩家數量
     private static final int MAX_TRIAL_PLAYERS = 4;
     // 每位玩家的試煉世界映射
-    private final Map<UUID, World> playerTrialWorlds = new HashMap<>();
+    private final Map<UUID, World> playerTrialWorlds = new ConcurrentHashMap<>();
     // 原始位置備份
-    private final Map<UUID, Location> originalLocations = new HashMap<>();
+    private final Map<UUID, Location> originalLocations = new ConcurrentHashMap<>();
     // 玩家難度映射
-    private final Map<UUID, TrialDifficulty> playerDifficulties = new HashMap<>();
+    private final Map<UUID, TrialDifficulty> playerDifficulties = new ConcurrentHashMap<>();
     // MobSpawner 任務映射
-    private final Map<UUID, WorldMobSpawnerTask> spawnerTasks = new HashMap<>();
+    private final Map<UUID, WorldMobSpawnerTask> spawnerTasks = new ConcurrentHashMap<>();
     // 試煉世界冷卻時間
-    private final Map<UUID, Long> trialCooldowns = new HashMap<>();
+    private final Map<UUID, Long> trialCooldowns = new ConcurrentHashMap<>();
     // 冷卻時間的 BossBar
-    private final Map<UUID, BossBar> cooldownBars = new HashMap<>();
+    private final Map<UUID, BossBar> cooldownBars = new ConcurrentHashMap<>();
     // 冷卻時間的任務
-    private final Map<UUID, BukkitTask> cooldownTasks = new HashMap<>();
+    private final Map<UUID, BukkitTask> cooldownTasks = new ConcurrentHashMap<>();
     // 玩家放置的床
     private final Set<Location> playerPlacedBeds = new HashSet<>();
     // 新增：世界最後訪問時間
-    private final Map<String, Long> worldLastAccessed = new HashMap<>();
+    private final Map<String, Long> worldLastAccessed = new ConcurrentHashMap<>();
     //每個試煉世界當前的擊殺數
-    private final Map<String, Integer> worldKillCounts = new HashMap<>();
+        private final Map<String, Integer> worldKillCounts = new ConcurrentHashMap<>();
     // 每個試煉世界的開始時間（毫秒）
-    private final Map<String, Long> worldStartTimes = new HashMap<>();
+    private final Map<String, Long> worldStartTimes = new ConcurrentHashMap<>();
     // 目前正在進行的試煉會話
     private final Map<String, TrialSession> activeTrialSessions = new ConcurrentHashMap<>();
 
