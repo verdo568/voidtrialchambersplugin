@@ -75,7 +75,7 @@ public class LeaderboardManager {
             Map<String, List<T>> loaded = gson.fromJson(reader, type);
             if (loaded != null) target.putAll(loaded);
         } catch (IOException e) {
-            // silent
+            throw new RuntimeException(e);
         }
     }
 
