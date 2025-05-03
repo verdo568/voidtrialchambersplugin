@@ -35,25 +35,18 @@ public class BedProtectionListener implements Listener {
     // 禁止活塞推動床
     @EventHandler
     public void onPistonExtend(BlockPistonExtendEvent event) {
-        if (event.getBlock().getWorld().getName().startsWith("trial_")) {
-            for (var b : event.getBlocks()) {
-                if (b.getState() instanceof Bed) {
-                    event.setCancelled(true);
-                    return;
-                }
-            }
+        String worldName = event.getBlock().getWorld().getName();
+        if (worldName.startsWith("trial_") && event.getBlocks().stream().anyMatch(b -> b.getState() instanceof Bed)) {
+            event.setCancelled(true);
         }
     }
 
+    // 禁止活塞縮回時推動床
     @EventHandler
     public void onPistonRetract(BlockPistonRetractEvent event) {
-        if (event.getBlock().getWorld().getName().startsWith("trial_")) {
-            for (var b : event.getBlocks()) {
-                if (b.getState() instanceof Bed) {
-                    event.setCancelled(true);
-                    return;
-                }
-            }
+        String worldName = event.getBlock().getWorld().getName();
+        if (worldName.startsWith("trial_") && event.getBlocks().stream().anyMatch(b -> b.getState() instanceof Bed)) {
+            event.setCancelled(true);
         }
     }
 
