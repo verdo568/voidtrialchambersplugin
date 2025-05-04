@@ -7,13 +7,7 @@ import org.bukkit.attribute.Attribute;
 import org.bukkit.attribute.AttributeInstance;
 import org.bukkit.block.Bed;
 import org.bukkit.block.Block;
-import org.bukkit.boss.BarColor;
-import org.bukkit.boss.BarStyle;
 import org.bukkit.boss.BossBar;
-import org.bukkit.command.Command;
-import org.bukkit.command.CommandExecutor;
-import org.bukkit.command.CommandSender;
-import org.bukkit.command.TabCompleter;
 import org.bukkit.entity.*;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -31,7 +25,6 @@ import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
-import org.geysermc.floodgate.api.FloodgateApi;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.File;
@@ -59,21 +52,19 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
     // 新增：世界最後訪問時間
     final Map<String, Long> worldLastAccessed = new ConcurrentHashMap<>();
     // 原始位置備份
-    private final Map<UUID, Location> originalLocations = new ConcurrentHashMap<>();
+    final Map<UUID, Location> originalLocations = new ConcurrentHashMap<>();
     // 玩家難度映射
-    private final Map<UUID, TrialDifficulty> playerDifficulties = new ConcurrentHashMap<>();
+    final Map<UUID, TrialDifficulty> playerDifficulties = new ConcurrentHashMap<>();
     //每個試煉世界當前的擊殺數
-    private final Map<String, Integer> worldKillCounts = new ConcurrentHashMap<>();
+    final Map<String, Integer> worldKillCounts = new ConcurrentHashMap<>();
     // 每個試煉世界的開始時間（毫秒）
     private final Map<String, Long> worldStartTimes = new ConcurrentHashMap<>();
     // 目前正在進行的試煉會話
     private final Map<String, TrialSession> activeTrialSessions = new ConcurrentHashMap<>();
-
-    private LeaderboardManager leaderboardManager;
     // 排除處理的世界名單
-    private List<String> excludedWorldNames;
-
-    private CleanUpManager cleanUpManager;
+    List<String> excludedWorldNames;
+    CleanUpManager cleanUpManager;
+    private LeaderboardManager leaderboardManager;
 
     @Override
     public void onEnable() {
@@ -83,18 +74,18 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         saveDefaultConfig();
         reloadConfig();
         leaderboardManager = new LeaderboardManager(this);
-        TrialChambersCommand trialCmd = new TrialChambersCommand();
+        TrialChambersCommand trialCmd = new TrialChambersCommand(this);
         LeaderboardCommand lbCmd = new LeaderboardCommand(leaderboardManager);
         getServer().getPluginManager().registerEvents(new WardenTargetFilter(), this);
         Bukkit.getPluginManager().registerEvents(new SignPlaceListener(), this);
         Bukkit.getPluginManager().registerEvents(new BedProtectionListener(), this);
         excludedWorldNames = getConfig().getStringList("excluded_worlds");
+        Objects.requireNonNull(getCommand("trialchambers")).setExecutor(new TrialChambersCommand(this));
+        Objects.requireNonNull(getCommand("exittrial")).setExecutor(new ExitTrialCommand(this));
         Objects.requireNonNull(getCommand("trailteam")).setExecutor(trailTeamCmd);
         Objects.requireNonNull(getCommand("trailteam")).setTabCompleter(trailTeamCmd);
         Objects.requireNonNull(getCommand("trialleaderboard")).setExecutor(lbCmd);
         Objects.requireNonNull(getCommand("trialleaderboard")).setTabCompleter(lbCmd);
-        Objects.requireNonNull(getCommand("trialchambers")).setExecutor(new TrialChambersCommand());
-        Objects.requireNonNull(getCommand("exittrial")).setExecutor(new ExitTrialCommand());
         // 初始化并调度定期清理任务（每 5 分钟一次）
         this.cleanUpManager = new CleanUpManager(this);
         cleanUpManager.schedulePeriodicCleanup();
@@ -135,7 +126,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
     }
 
     // 建立個人試煉世界並確保 data 資料夾及空檔案存在
-    private World createPersonalTrialWorld(UUID uuid) {
+    World createPersonalTrialWorld(UUID uuid) {
         String worldName = "trial_" + uuid;
         World existingWorld = Bukkit.getWorld(worldName);
         if (existingWorld != null) {
@@ -792,277 +783,6 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
 
         public void stop() {
             if (task != null) task.cancel();
-        }
-    }
-
-
-    /**
-     * /trialchambers 指令處理，重複執行前先刪除舊世界
-     */
-    private class TrialChambersCommand implements CommandExecutor, TabCompleter {
-        private static final long COOLDOWN_MS = 150_000L; // 2.5 分鐘
-
-        @Override
-        public boolean onCommand(@NotNull CommandSender sender, @NotNull Command cmd,
-                                 @NotNull String label, @NotNull String @NotNull [] args) {
-            if (!(sender instanceof Player player)) {
-                return true;
-            }
-            UUID uid = player.getUniqueId();
-            long now = System.currentTimeMillis();
-            long last = trialCooldowns.getOrDefault(uid, 0L);
-            long elapsed = now - last;
-            List<String> argList = new ArrayList<>(Arrays.asList(args));
-            boolean bypassCooldown = player.isOp() && argList.remove("skip");
-            boolean isBedrock = FloodgateApi.getInstance().isFloodgatePlayer(uid);
-
-            if (elapsed < COOLDOWN_MS && !bypassCooldown) {
-                long remaining = COOLDOWN_MS - elapsed;
-                long minutesLeft = remaining / 60000;
-                long secondsLeft = (remaining % 60000 + 999) / 1000;
-
-                String timeLeft = (minutesLeft > 0 ? minutesLeft + " 分 " : "") + secondsLeft + " 秒";
-                player.sendMessage("§e指令冷卻中，請稍等 " + timeLeft + "後再試");
-
-                // **仅在 Java 客户端显示 BossBar**
-                if (!isBedrock) {
-                    BossBar bar = cooldownBars.computeIfAbsent(uid, id -> {
-                        BossBar b = Bukkit.createBossBar("§e指令冷卻中... " + timeLeft,
-                                BarColor.BLUE, BarStyle.SOLID);
-                        b.addPlayer(player);
-                        b.setVisible(true);
-                        return b;
-                    });
-
-                    if (!cooldownTasks.containsKey(uid)) {
-                        BukkitTask task = new BukkitRunnable() {
-                            final long startTime = System.currentTimeMillis();
-                            final long total = remaining;
-
-                            @Override
-                            public void run() {
-                                long now = System.currentTimeMillis();
-                                long passed = now - startTime;
-                                long left = total - passed;
-                                if (left <= 0) {
-                                    bar.removeAll();
-                                    cooldownBars.remove(uid);
-                                    cooldownTasks.remove(uid);
-                                    cancel();
-                                    return;
-                                }
-                                long min = left / 60000;
-                                long sec = (left % 60000 + 999) / 1000;
-                                bar.setTitle("§e指令冷卻中... " +
-                                        (min > 0 ? min + " 分 " : "") + sec + " 秒");
-                                bar.setProgress((double) left / total);
-                            }
-                        }.runTaskTimer(VoidTrialChambersPlugin.this, 0L, 20L);
-                        cooldownTasks.put(uid, task);
-                    } else {
-                        bar.setTitle("§e指令冷卻中... " + timeLeft);
-                    }
-                }
-                return true;
-            }
-            if (bypassCooldown) {
-                player.sendMessage("§aOP 已跳過指令冷卻");
-            }
-            String[] filteredArgs = argList.toArray(new String[0]);
-            String input = filteredArgs.length > 0 ? filteredArgs[0] : "普通";
-            TrialDifficulty diff = TrialDifficulty.from(input);
-            if (diff == null) {
-                player.sendMessage("§c無效難度，請輸入 簡單/普通/地獄");
-                return true;
-            }
-
-            // 刪除舊試煉世界
-            World oldWorld = playerTrialWorlds.remove(uid);
-            if (oldWorld != null) {
-                cleanUpManager.clearEntityAndPoiFolders(oldWorld);
-            }
-
-            trialCooldowns.put(uid, now);
-            TrialDifficulty ignored = playerDifficulties.get(uid);
-            player.sendMessage(Component.text("§6正在進入「" + diff.getDisplay() + "」難度的試煉世界，請稍候..."));
-            originalLocations.put(uid, player.getLocation());
-
-            World personal = createPersonalTrialWorld(uid);
-            if (personal == null) {
-                player.sendMessage("§c無法建立試煉世界，請稍後再試");
-                return true;
-            }
-            // 設置玩家的試煉世界
-            playerTrialWorlds.put(uid, personal);
-            // 記錄難度並啟動刷怪任務
-            playerDifficulties.put(uid, diff);
-            WorldMobSpawnerTask spawner = new WorldMobSpawnerTask(personal, diff);
-            spawnerTasks.put(uid, spawner);
-            spawner.start();
-
-            String name = personal.getName();
-            worldKillCounts.put(name, 0);
-            int y = getConfig().getInt("trial_chamber.y", 50);
-            int range = getConfig().getInt("trial_range", 500);
-            Random rnd = new Random();
-            int x = rnd.nextInt(range * 2 + 1) - range;
-            int z = rnd.nextInt(range * 2 + 1) - range;
-            Location center = new Location(personal, x + 0.5, y + 5, z + 0.5);
-
-            player.teleport(center);
-            applyTrialEffects(player);
-
-            // 顯示「試煉準備中...」進度條
-            BossBar trialBar = Bukkit.createBossBar("§6試煉準備中...", BarColor.YELLOW, BarStyle.SOLID);
-            trialBar.addPlayer(player);
-            trialBar.setVisible(true);
-
-            new BukkitRunnable() {
-                final long total = 13_000L;
-                final long start = System.currentTimeMillis();
-
-                @Override
-                public void run() {
-                    long now = System.currentTimeMillis();
-                    long elapsed = now - start;
-
-                    if (elapsed >= total) {
-                        trialBar.removePlayer(player);
-                        cancel();
-                        return;
-                    }
-
-                    double progress = (double) elapsed / total;
-                    trialBar.setProgress(progress);
-                }
-            }.runTaskTimer(VoidTrialChambersPlugin.this, 0L, 10L); // 每 0.5 秒更新一次
-
-            new BukkitRunnable() {
-                @Override
-                public void run() {
-                    Bukkit.dispatchCommand(Bukkit.getConsoleSender(),
-                            String.format("execute in %s run place structure minecraft:trial_chambers %d %d %d",
-                                    personal.getName(), x, y, z));
-                    getLogger().info("Structure placed at " + x + "," + y + "," + z);
-                }
-            }.runTaskLater(VoidTrialChambersPlugin.this, 200L);
-
-            new BukkitRunnable() {
-                @Override
-                public void run() {
-                    removeTrialEffects(player);
-                    teleportToNearestBedOrOrigin(player, personal);
-                }
-            }.runTaskLater(VoidTrialChambersPlugin.this, 240L);
-
-            return true;
-        }
-
-        @Override
-        public List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command command, @NotNull String alias, String[] args) {
-            if (args.length == 1) {
-                List<String> options = Arrays.asList("吞夢噬念", "地獄", "普通", "簡單");
-                String input = args[0];
-                List<String> completions = new ArrayList<>();
-                for (String option : options) {
-                    if (option.startsWith(input)) {
-                        completions.add(option); // 按 options 順序加入
-                    }
-                }
-                return completions;
-            }
-            return Collections.emptyList();
-        }
-
-        private void applyTrialEffects(Player p) {
-            p.addPotionEffect(new org.bukkit.potion.PotionEffect(PotionEffectType.BLINDNESS, 400, 99));
-            p.addPotionEffect(new org.bukkit.potion.PotionEffect(PotionEffectType.RESISTANCE, 380, 99));
-            p.addPotionEffect(new org.bukkit.potion.PotionEffect(PotionEffectType.SLOW_FALLING, 300, 2));
-            p.addPotionEffect(new org.bukkit.potion.PotionEffect(PotionEffectType.SLOWNESS, 300, 99));
-            p.addPotionEffect(new org.bukkit.potion.PotionEffect(PotionEffectType.MINING_FATIGUE, 300, 99));
-        }
-
-        private void removeTrialEffects(Player p) {
-            for (PotionEffectType type : Arrays.asList(
-                    PotionEffectType.BLINDNESS, PotionEffectType.SLOW_FALLING,
-                    PotionEffectType.SLOWNESS, PotionEffectType.MINING_FATIGUE)) {
-                p.removePotionEffect(type);
-            }
-            p.addPotionEffect(new org.bukkit.potion.PotionEffect(PotionEffectType.NIGHT_VISION, 100, 0));
-        }
-
-        private void teleportToNearestBedOrOrigin(Player p, World world) {
-            Location loc = p.getLocation();
-            Location bedLoc = findNearestBed(loc, world);
-            if (bedLoc != null) {
-                p.teleport(bedLoc);
-                p.sendMessage("§6已進入試煉之間副本");
-            } else {
-                Location orig = originalLocations.remove(p.getUniqueId());
-                if (orig != null) {
-                    p.teleport(orig);
-                    p.sendMessage("§6未找到床，已傳送回原始位置");
-                }
-            }
-        }
-
-        private Location findNearestBed(Location center, World world) {
-            double best = Double.MAX_VALUE;
-            Location bestLoc = null;
-            int cx = center.getBlockX(), cy = center.getBlockY(), cz = center.getBlockZ();
-            for (int x = cx - 100; x <= cx + 100; x++) {
-                for (int z = cz - 100; z <= cz + 100; z++) {
-                    for (int y = world.getMinHeight(); y <= Math.min(world.getMaxHeight(), cy + 100); y++) {
-                        Block b = world.getBlockAt(x, y, z);
-                        if (b.getState() instanceof Bed) {
-                            double dist = b.getLocation().distanceSquared(center);
-                            if (dist < best) {
-                                best = dist;
-                                bestLoc = b.getLocation().add(0.5, 1, 0.5);
-                            }
-                        }
-                    }
-                }
-            }
-            return bestLoc;
-        }
-    }
-
-    private class ExitTrialCommand implements CommandExecutor {
-        @Override
-        public boolean onCommand(@NotNull CommandSender sender, @NotNull Command cmd,
-                                 @NotNull String label, @NotNull String @NotNull [] args) {
-            if (!(sender instanceof Player p)) {
-                return true;
-            }
-            String currentWorld = p.getWorld().getName();
-            if (excludedWorldNames.contains(currentWorld)) {
-                return true;
-            }
-            World main = Bukkit.getWorld("world");
-            if (main != null) {
-                for (PotionEffectType type : Arrays.asList(
-                        PotionEffectType.BLINDNESS, PotionEffectType.SLOW_FALLING,
-                        PotionEffectType.SLOWNESS, PotionEffectType.MINING_FATIGUE,
-                        PotionEffectType.RESISTANCE)) {
-                    p.removePotionEffect(type);
-                }
-                p.teleport(main.getSpawnLocation());
-                p.sendMessage("§6你已退出試煉並傳送至主世界");
-            }
-            UUID uid = p.getUniqueId();
-            // —— 修复：先取出再判空 ——
-            WorldMobSpawnerTask spawner = spawnerTasks.remove(uid);
-            if (spawner != null) {
-                spawner.stop();
-            }
-
-            // —— 同理，对世界清理也判空 ——
-            World w = playerTrialWorlds.remove(uid);
-            if (w != null) {
-                cleanUpManager.clearEntityAndPoiFolders(w);
-            }
-            return true;
         }
     }
 }
