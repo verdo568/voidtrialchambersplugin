@@ -13,9 +13,6 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
-import org.bukkit.event.entity.EntityDamageByEntityEvent;
-import org.bukkit.event.entity.EntityDamageEvent;
-import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.world.PortalCreateEvent;
 import org.bukkit.generator.ChunkGenerator;
@@ -58,13 +55,13 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
     //每個試煉世界當前的擊殺數
     final Map<String, Integer> worldKillCounts = new ConcurrentHashMap<>();
     // 每個試煉世界的開始時間（毫秒）
-    private final Map<String, Long> worldStartTimes = new ConcurrentHashMap<>();
+    final Map<String, Long> worldStartTimes = new ConcurrentHashMap<>();
     // 目前正在進行的試煉會話
-    private final Map<String, TrialSession> activeTrialSessions = new ConcurrentHashMap<>();
+    final Map<String, TrialSession> activeTrialSessions = new ConcurrentHashMap<>();
     // 排除處理的世界名單
     List<String> excludedWorldNames;
     CleanUpManager cleanUpManager;
-    private LeaderboardManager leaderboardManager;
+    LeaderboardManager leaderboardManager;
 
     @Override
     public void onEnable() {
@@ -79,6 +76,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         getServer().getPluginManager().registerEvents(new WardenTargetFilter(), this);
         Bukkit.getPluginManager().registerEvents(new SignPlaceListener(), this);
         Bukkit.getPluginManager().registerEvents(new BedProtectionListener(), this);
+        Bukkit.getPluginManager().registerEvents(new EntityDeathListener(this), this);
         excludedWorldNames = getConfig().getStringList("excluded_worlds");
         Objects.requireNonNull(getCommand("trialchambers")).setExecutor(new TrialChambersCommand(this));
         Objects.requireNonNull(getCommand("exittrial")).setExecutor(new ExitTrialCommand(this));
@@ -299,111 +297,8 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         // 取消所有傳送門結構生成
         event.setCancelled(true);
     }
-
-    @EventHandler
-    public void onEntityDeath(EntityDeathEvent evt) {
-        World world = evt.getEntity().getWorld();
-        String name = world.getName();
-        if (!name.startsWith("trial_")) return;
-        if (!(evt.getEntity() instanceof Monster)) return;
-
-        UUID owner = findWorldOwner(name);
-        if (owner == null) return;
-        TrialDifficulty diff = playerDifficulties.get(owner);
-        if (diff != TrialDifficulty.HELL && diff != TrialDifficulty.JUDGMENT) return;
-
-        String diffNameZh = diff == TrialDifficulty.HELL ? "地獄" : "吞夢噬念";
-
-        EntityDamageEvent last = evt.getEntity().getLastDamageCause();
-        if (!(last instanceof EntityDamageByEntityEvent dbe)) return;
-        Entity damager = dbe.getDamager();
-        if (!(damager instanceof Player player)) return;
-
-        // 累計擊殺
-        int count = worldKillCounts.getOrDefault(name, 0) + 1;
-        worldKillCounts.put(name, count);
-
-        // 更新試煉 session
-        TrialSession session = activeTrialSessions.computeIfAbsent(name, k -> new TrialSession(name));
-        session.addParticipant(player);
-        session.recordKill(player.getUniqueId());
-
-        // 1. 動態設定提醒上限：Judgment 到 450，Hell 到 250
-        int reminderMax = diff == TrialDifficulty.JUDGMENT ? 450 : 250;
-        if (count % 50 == 0 && count <= reminderMax) {
-            String msg = "§e本試煉（" + diffNameZh + "難度）已擊殺 " + count + " 隻怪物！";
-            for (Player p : world.getPlayers()) {
-                p.sendMessage(Component.text(msg));
-            }
-        }
-
-        // 第一次擊殺，記錄開始時間
-        if (count == 1) {
-            worldStartTimes.put(name, System.currentTimeMillis());
-        }
-
-        // 2. 動態設定結束目標：Judgment 要 500，Hell 要 300
-        int finishCount = diff == TrialDifficulty.JUDGMENT ? 500 : 300;
-        if (count >= finishCount) {
-            long start = worldStartTimes.getOrDefault(name, System.currentTimeMillis());
-            long elapsedMs = System.currentTimeMillis() - start;
-            long totalSeconds = elapsedMs / 1000;
-            long minutes = totalSeconds / 60;
-            long seconds = totalSeconds % 60;
-            String timeStr = (minutes > 0
-                    ? minutes + " 分 " + seconds + " 秒"
-                    : seconds + " 秒");
-
-            // 停止刷怪，清場
-            WorldMobSpawnerTask spawner = spawnerTasks.remove(owner);
-            if (spawner != null) spawner.stop();
-            world.getEntities().stream()
-                    .filter(e -> e instanceof Monster)
-                    .forEach(Entity::remove);
-
-            // 更新並存檔排行榜
-            TrialSession currentSession = activeTrialSessions.get(name);
-            if (currentSession != null) {
-                currentSession.markCompleted();
-                boolean solo = currentSession.isSolo();
-
-                // 1. 組時間榜條目並更新
-                LeaderboardManager.TimeLeaderboardEntry timeEntry =
-                        new LeaderboardManager.TimeLeaderboardEntry(
-                                name, currentSession.getParticipantNames(), elapsedMs
-                        );
-                leaderboardManager.updateTimeLeaderboard(diff.name(), timeEntry, solo);
-
-                // 2. 組擊殺榜條目並更新
-                LeaderboardManager.KillsLeaderboardEntry killsEntry =
-                        new LeaderboardManager.KillsLeaderboardEntry(
-                                name, currentSession.getPlayerKillRecords()
-                        );
-                leaderboardManager.updateKillsLeaderboard(diff.name(), killsEntry);
-
-                // 3. 最後呼叫一次儲存
-                leaderboardManager.saveLeaderboards();
-            }
-
-            // 廣播完成訊息（動態顯示 finishCount）
-            String finishMsg = String.format(
-                    "§6【試煉完成】恭喜，在%s難度的試煉副本已擊殺 %d 隻怪物！ 耗時：%s\n" +
-                            "§a排行榜已更新，可使用 /trialleaderboard solo/team/kills 查看",
-                    diffNameZh, finishCount, timeStr
-            );
-            world.getPlayers().forEach(p -> p.sendMessage(finishMsg));
-
-            // 重置狀態
-            worldKillCounts.remove(name);
-            worldStartTimes.remove(name);
-            activeTrialSessions.remove(name);
-        }
-    }
-
-    /**
-     * 輔助：給定 worldName 找到對應的玩家 UUID
-     */
-    private UUID findWorldOwner(String worldName) {
+    // 新增：輔助給外部 Listener 使用
+    UUID findWorldOwner(String worldName) {
         for (var entry : playerTrialWorlds.entrySet()) {
             if (entry.getValue().getName().equals(worldName)) {
                 return entry.getKey();
