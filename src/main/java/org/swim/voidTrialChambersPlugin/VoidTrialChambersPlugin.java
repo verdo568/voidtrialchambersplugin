@@ -36,10 +36,9 @@ import org.jetbrains.annotations.NotNull;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.*;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+
 
 public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
 
@@ -48,23 +47,23 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
     // 每個試煉世界的最大玩家數量
     private static final int MAX_TRIAL_PLAYERS = 4;
     // 每位玩家的試煉世界映射
-    private final Map<UUID, World> playerTrialWorlds = new ConcurrentHashMap<>();
+    final Map<UUID, World> playerTrialWorlds = new ConcurrentHashMap<>();
+    // MobSpawner 任務映射
+    final Map<UUID, WorldMobSpawnerTask> spawnerTasks = new ConcurrentHashMap<>();
+    // 試煉世界冷卻時間
+    final Map<UUID, Long> trialCooldowns = new ConcurrentHashMap<>();
+    // 冷卻時間的 BossBar
+    final Map<UUID, BossBar> cooldownBars = new ConcurrentHashMap<>();
+    // 冷卻時間的任務
+    final Map<UUID, BukkitTask> cooldownTasks = new ConcurrentHashMap<>();
+    // 玩家放置的床
+    final Set<Location> playerPlacedBeds = new HashSet<>();
+    // 新增：世界最後訪問時間
+    final Map<String, Long> worldLastAccessed = new ConcurrentHashMap<>();
     // 原始位置備份
     private final Map<UUID, Location> originalLocations = new ConcurrentHashMap<>();
     // 玩家難度映射
     private final Map<UUID, TrialDifficulty> playerDifficulties = new ConcurrentHashMap<>();
-    // MobSpawner 任務映射
-    private final Map<UUID, WorldMobSpawnerTask> spawnerTasks = new ConcurrentHashMap<>();
-    // 試煉世界冷卻時間
-    private final Map<UUID, Long> trialCooldowns = new ConcurrentHashMap<>();
-    // 冷卻時間的 BossBar
-    private final Map<UUID, BossBar> cooldownBars = new ConcurrentHashMap<>();
-    // 冷卻時間的任務
-    private final Map<UUID, BukkitTask> cooldownTasks = new ConcurrentHashMap<>();
-    // 玩家放置的床
-    private final Set<Location> playerPlacedBeds = new HashSet<>();
-    // 新增：世界最後訪問時間
-    private final Map<String, Long> worldLastAccessed = new ConcurrentHashMap<>();
     //每個試煉世界當前的擊殺數
     private final Map<String, Integer> worldKillCounts = new ConcurrentHashMap<>();
     // 每個試煉世界的開始時間（毫秒）
@@ -75,6 +74,8 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
     private LeaderboardManager leaderboardManager;
     // 排除處理的世界名單
     private List<String> excludedWorldNames;
+
+    private CleanUpManager cleanUpManager;
 
     @Override
     public void onEnable() {
@@ -95,48 +96,40 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         Objects.requireNonNull(getCommand("trialleaderboard")).setTabCompleter(lbCmd);
         Objects.requireNonNull(getCommand("trialchambers")).setExecutor(new TrialChambersCommand());
         Objects.requireNonNull(getCommand("exittrial")).setExecutor(new ExitTrialCommand());
-        // 註冊定期清理任務，每5分鐘執行一次
-        new BukkitRunnable() {
-            @Override
-            public void run() {
-                cleanupUnusedResources();
-            }
-        }.runTaskTimer(this, 6000L, 6000L); // 初次延遲5分鐘，之後每5分鐘執行一次
+        // 初始化并调度定期清理任务（每 5 分钟一次）
+        this.cleanUpManager = new CleanUpManager(this);
+        cleanUpManager.schedulePeriodicCleanup();
         getLogger().info("記憶體清理任務已啟用");
         getLogger().info("Void Trial Chambers Plugin 已啟用");
     }
 
     @Override
     public void onDisable() {
-        // 停止所有 Spawner 任務
+        // 1. 停止所有刷怪任務
         spawnerTasks.values().forEach(WorldMobSpawnerTask::stop);
-        // 先複製一份要處理的世界列表，避免迭代時並發修改
-        for (World w : new ArrayList<>(playerTrialWorlds.values())) {
-            // 如果世界裡有玩家，就逐一踢出
-            for (Player p : w.getPlayers()) {
-                // 使用 Component API 組成訊息
+
+        // 2. 踢出並清理所有試煉世界
+        for (World world : new ArrayList<>(playerTrialWorlds.values())) {
+            // 踢出玩家
+            for (Player p : world.getPlayers()) {
                 Component msg = Component.text("§c伺服器/插件正在關閉，您已被踢出試煉世界");
-                // 直接呼叫 kick(Component) 取代已棄用的 kickPlayer(String)
                 p.kick(msg);
             }
-            // 然後再清空 entities、poi、region 等資料夾
-            clearEntityAndPoiFolders(w);
+            // 卸載世界並清空 entities/poi/region 資料夾
+            cleanUpManager.clearEntityAndPoiFolders(world);
         }
-        // 清理所有記錄的資料結構
+
+        // 3. 清空所有運行時記錄
         playerPlacedBeds.clear();
         worldLastAccessed.clear();
-        trialCooldowns.clear();
         originalLocations.clear();
         playerDifficulties.clear();
-        // 取消所有進度條和任務
-        for (BossBar bar : cooldownBars.values()) {
-            bar.removeAll();
-        }
-        cooldownBars.clear();
+        trialCooldowns.clear();
 
-        for (BukkitTask task : cooldownTasks.values()) {
-            task.cancel();
-        }
+        // 4. 取消並移除所有冷卻進度條與任務
+        cooldownBars.values().forEach(BossBar::removeAll);
+        cooldownBars.clear();
+        cooldownTasks.values().forEach(BukkitTask::cancel);
         cooldownTasks.clear();
 
         getLogger().info("Void Trial Chambers Plugin 已停用");
@@ -147,7 +140,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         String worldName = "trial_" + uuid;
         World existingWorld = Bukkit.getWorld(worldName);
         if (existingWorld != null) {
-            clearEntityAndPoiFolders(existingWorld);
+            cleanUpManager.clearEntityAndPoiFolders(existingWorld);
         }
 
         // 使用 CompletableFuture 非同步創建世界
@@ -161,7 +154,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         if (world != null) {
             // 預先建立必要的資料夾及檔案
             prepareWorldDataFolders(world);
-            updateWorldAccess(world);
+            cleanUpManager.updateWorldAccess(world);
             // 設置世界規則
             world.setGameRule(GameRule.KEEP_INVENTORY, true);
             world.setGameRule(GameRule.ANNOUNCE_ADVANCEMENTS, false); // 避免進度通知
@@ -208,12 +201,12 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         World from = event.getFrom();
 
         // 更新目標世界的訪問時間
-        updateWorldAccess(to);
+        cleanUpManager.updateWorldAccess(to);
 
         // 如果離開的是試煉世界，檢查是否還有其他玩家
         if (from.getName().startsWith("trial_") && from.getPlayers().isEmpty()) {
             // 標記最後訪問時間
-            updateWorldAccess(from);
+            cleanUpManager.updateWorldAccess(from);
 
             // 找出這個世界的擁有者UUID
             UUID ownerUUID = null;
@@ -226,11 +219,11 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
 
             // 停止相關任務並清理資源
             if (ownerUUID != null) {
-                stopAndCleanPlayerResources(ownerUUID);
+                cleanUpManager.stopAndCleanPlayerResources(ownerUUID);
             }
 
             // 清理和卸載世界
-            clearEntityAndPoiFolders(from);
+            cleanUpManager.clearEntityAndPoiFolders(from);
             worldLastAccessed.remove(from.getName());
         }
     }
@@ -271,172 +264,15 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
     }
 
     /**
-     * 清空指定世界的 entities 和 poi 資料夾內容
-     * 使用 Java NIO Files API 清空指定世界的資料夾內容，但保留資料夾本身
-     */
-    private void clearEntityAndPoiFolders(World world) {
-        if (world == null) return;
-        File worldFolder = world.getWorldFolder();
-
-        // 卸載世界，但不刪除檔案
-        Bukkit.unloadWorld(world, false);
-
-        // 定義要清理的目錄
-        Path[] pathsToClean = {
-                Paths.get(worldFolder.getPath(), "entities"),
-                Paths.get(worldFolder.getPath(), "poi"),
-                Paths.get(worldFolder.getPath(), "region")
-        };
-
-        for (Path directory : pathsToClean) {
-            if (Files.exists(directory)) {
-                try {
-                    // 使用 walkFileTree 遍歷目錄樹並只刪除內容
-                    Files.walkFileTree(directory, new SimpleFileVisitor<>() {
-                        @Override
-                        public @NotNull FileVisitResult visitFile(@NotNull Path file, @NotNull BasicFileAttributes attrs) throws IOException {
-                            Files.delete(file);
-                            return FileVisitResult.CONTINUE;
-                        }
-
-                        @Override
-                        public @NotNull FileVisitResult postVisitDirectory(@NotNull Path dir, IOException exc) throws IOException {
-                            // 如果不是要清理的根目錄，則刪除此子目錄
-                            if (!dir.equals(directory)) {
-                                Files.delete(dir);
-                            }
-                            return FileVisitResult.CONTINUE;
-                        }
-                    });
-                } catch (IOException e) {
-                    getLogger().warning("清理資料夾內容時出錯 " + directory + ": " + e.getMessage());
-                }
-            }
-        }
-    }
-
-    /**
-     * 清理未使用的資源
-     */
-    private void cleanupUnusedResources() {
-        long now = System.currentTimeMillis();
-        int cleaned = 0;
-
-        // 識別需要清理的世界
-        List<String> worldsToClean = worldLastAccessed.entrySet().stream()
-                .filter(entry -> now - entry.getValue() > WORLD_RETENTION_TIME)
-                .map(Map.Entry::getKey)
-                .filter(worldName -> {
-                    World world = Bukkit.getWorld(worldName);
-                    return world != null && world.getPlayers().isEmpty();
-                })
-                .toList();
-
-        // 執行清理
-        for (String worldName : worldsToClean) {
-            World world = Bukkit.getWorld(worldName);
-            if (world == null) continue;
-
-            UUID ownerUUID = getOwnerUUIDByWorldName(worldName);
-
-            if (ownerUUID != null) {
-                stopAndCleanPlayerResources(ownerUUID);
-            }
-
-            getLogger().info("正在清理未使用的試煉世界: " + worldName);
-            clearEntityAndPoiFolders(world);
-            worldLastAccessed.remove(worldName);
-            cleaned++;
-        }
-
-        // 清理離線玩家的資源
-        cleanupOfflinePlayerResources();
-
-        if (cleaned > 0) {
-            getLogger().info("記憶體清理完成: 釋放了 " + cleaned + " 個世界資源");
-        }
-    }
-
-    /**
      * 根據世界名稱取得對應的玩家 UUID
      */
-    private UUID getOwnerUUIDByWorldName(String worldName) {
+    public UUID getOwnerUUIDByWorldName(String worldName) {
         for (Map.Entry<UUID, World> entry : playerTrialWorlds.entrySet()) {
             if (entry.getValue().getName().equals(worldName)) {
                 return entry.getKey();
             }
         }
         return null;
-    }
-
-    // 新增輔助方法，處理停止和清理單個玩家的所有資源
-    private void stopAndCleanPlayerResources(UUID playerUUID) {
-        // 停止刷怪任務
-        WorldMobSpawnerTask task = spawnerTasks.remove(playerUUID);
-        if (task != null) {
-            task.stop();
-        }
-
-        // 移除世界映射
-        playerTrialWorlds.remove(playerUUID);
-        playerDifficulties.remove(playerUUID);
-
-        // 清理冷卻相關資源
-        BukkitTask cooldownTask = cooldownTasks.remove(playerUUID);
-        if (cooldownTask != null) {
-            cooldownTask.cancel();
-        }
-
-        BossBar bar = cooldownBars.remove(playerUUID);
-        if (bar != null) {
-            bar.removeAll();
-        }
-    }
-
-    // 清理離線玩家的資源
-    private void cleanupOfflinePlayerResources() {
-        int cleaned = 0;
-        List<UUID> offlinePlayers = new ArrayList<>();
-
-        // 識別離線玩家
-        for (UUID uuid : new HashSet<>(trialCooldowns.keySet())) {
-            Player player = Bukkit.getPlayer(uuid);
-            if (player == null || !player.isOnline()) {
-                offlinePlayers.add(uuid);
-            }
-        }
-
-        // 清理資源
-        for (UUID uuid : offlinePlayers) {
-            trialCooldowns.remove(uuid);
-            stopAndCleanPlayerResources(uuid);
-            cleaned++;
-        }
-
-        // 清理玩家放置的床記錄
-        Iterator<Location> bedIterator = playerPlacedBeds.iterator();
-        while (bedIterator.hasNext()) {
-            Location bedLoc = bedIterator.next();
-            World world = bedLoc.getWorld();
-            if (world == null || !world.getName().startsWith("trial_") ||
-                    !worldLastAccessed.containsKey(world.getName())) {
-                bedIterator.remove();  // 正確的移除方式
-                cleaned++;
-            }
-        }
-
-        if (cleaned > 0) {
-            getLogger().info("已清理 " + cleaned + " 個離線玩家資源");
-        }
-    }
-
-    /**
-     * 更新世界訪問時間戳記
-     */
-    public void updateWorldAccess(World world) {
-        if (world != null && world.getName().startsWith("trial_")) {
-            worldLastAccessed.put(world.getName(), System.currentTimeMillis());
-        }
     }
 
     @EventHandler
@@ -1085,7 +921,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             // 刪除舊試煉世界
             World oldWorld = playerTrialWorlds.remove(uid);
             if (oldWorld != null) {
-                clearEntityAndPoiFolders(oldWorld);
+                cleanUpManager.clearEntityAndPoiFolders(oldWorld);
             }
 
             trialCooldowns.put(uid, now);
@@ -1266,7 +1102,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             // —— 同理，对世界清理也判空 ——
             World w = playerTrialWorlds.remove(uid);
             if (w != null) {
-                clearEntityAndPoiFolders(w);
+                cleanUpManager.clearEntityAndPoiFolders(w);
             }
             return true;
         }
