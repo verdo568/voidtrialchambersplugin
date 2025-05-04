@@ -89,7 +89,7 @@ public class LeaderboardManager {
         try (FileWriter writer = new FileWriter(file)) {
             gson.toJson(data, writer);
         } catch (IOException e) {
-            // silent
+            throw new RuntimeException(e);
         }
     }
 
