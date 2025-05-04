@@ -1,10 +1,10 @@
 package org.swim.voidTrialChambersPlugin;
 
+import org.bukkit.entity.EntityType;
+import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityTargetLivingEntityEvent;
-import org.bukkit.entity.EntityType;
-import org.bukkit.entity.Player;
 
 public class WardenTargetFilter implements Listener {
 

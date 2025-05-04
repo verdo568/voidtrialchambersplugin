@@ -95,7 +95,6 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
     public void onDisable() {
         // 1. 停止所有刷怪任務
         spawnerTasks.values().forEach(WorldMobSpawnerTask::stop);
-
         // 2. 踢出並清理所有試煉世界
         for (World world : new ArrayList<>(playerTrialWorlds.values())) {
             // 踢出玩家

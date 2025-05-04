@@ -35,7 +35,7 @@ public class LeaderboardManager {
 
         soloTimeFile = new File(dataFolder, "solo_time_leaderboard.json");
         teamTimeFile = new File(dataFolder, "team_time_leaderboard.json");
-        killsFile    = new File(dataFolder, "kills_leaderboard.json");
+        killsFile = new File(dataFolder, "kills_leaderboard.json");
 
         try {
             // 嘗試建立檔案，並檢查 createNewFile 回傳值
@@ -65,9 +65,12 @@ public class LeaderboardManager {
     }
 
     private void loadLeaderboards() {
-        load(soloTimeFile, new TypeToken<Map<String, List<TimeLeaderboardEntry>>>(){}.getType(), timeLeaderboardSolo);
-        load(teamTimeFile, new TypeToken<Map<String, List<TimeLeaderboardEntry>>>(){}.getType(), timeLeaderboardTeam);
-        load(killsFile,    new TypeToken<Map<String, List<KillsLeaderboardEntry>>>(){}.getType(), killsLeaderboard);
+        load(soloTimeFile, new TypeToken<Map<String, List<TimeLeaderboardEntry>>>() {
+        }.getType(), timeLeaderboardSolo);
+        load(teamTimeFile, new TypeToken<Map<String, List<TimeLeaderboardEntry>>>() {
+        }.getType(), timeLeaderboardTeam);
+        load(killsFile, new TypeToken<Map<String, List<KillsLeaderboardEntry>>>() {
+        }.getType(), killsLeaderboard);
     }
 
     private <T> void load(File file, Type type, Map<String, List<T>> target) {
@@ -82,7 +85,7 @@ public class LeaderboardManager {
     public void saveLeaderboards() {
         save(soloTimeFile, timeLeaderboardSolo);
         save(teamTimeFile, timeLeaderboardTeam);
-        save(killsFile,    killsLeaderboard);
+        save(killsFile, killsLeaderboard);
     }
 
     private <T> void save(File file, Map<String, List<T>> data) {
@@ -111,9 +114,11 @@ public class LeaderboardManager {
     public List<TimeLeaderboardEntry> getSoloTimeEntries(String diff) {
         return timeLeaderboardSolo.getOrDefault(diff, Collections.emptyList());
     }
+
     public List<TimeLeaderboardEntry> getTeamTimeEntries(String diff) {
         return timeLeaderboardTeam.getOrDefault(diff, Collections.emptyList());
     }
+
     public List<KillsLeaderboardEntry> getKillsEntries(String diff) {
         return killsLeaderboard.getOrDefault(diff, Collections.emptyList());
     }
@@ -139,9 +144,17 @@ public class LeaderboardManager {
             return (minutes > 0 ? minutes + " 分 " : "") + seconds + " 秒";
         }
 
-        public List<String> getPlayerNames() { return playerNames; }
-        public long getCompletionTimeMs() { return completionTimeMs; }
-        public String getFormattedTime() { return formattedTime; }
+        public List<String> getPlayerNames() {
+            return playerNames;
+        }
+
+        public long getCompletionTimeMs() {
+            return completionTimeMs;
+        }
+
+        public String getFormattedTime() {
+            return formattedTime;
+        }
     }
 
     public static class KillsLeaderboardEntry {
@@ -154,9 +167,15 @@ public class LeaderboardManager {
             long timestamp = System.currentTimeMillis();
         }
 
-        public int getTotalKills() { return totalKills; }
-        public List<PlayerKillRecord> getPlayerRecords() { return playerRecords; }
+        public int getTotalKills() {
+            return totalKills;
+        }
+
+        public List<PlayerKillRecord> getPlayerRecords() {
+            return playerRecords;
+        }
     }
 
-    public record PlayerKillRecord(String playerName, int kills) {}
+    public record PlayerKillRecord(String playerName, int kills) {
+    }
 }
