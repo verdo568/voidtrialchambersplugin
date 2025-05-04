@@ -42,8 +42,6 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
 
-    // 世界保留時間（毫秒）
-    private static final long WORLD_RETENTION_TIME = 15 * 60 * 1000; // 15分鐘
     // 每個試煉世界的最大玩家數量
     private static final int MAX_TRIAL_PLAYERS = 4;
     // 每位玩家的試煉世界映射
@@ -88,6 +86,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         TrialChambersCommand trialCmd = new TrialChambersCommand();
         LeaderboardCommand lbCmd = new LeaderboardCommand(leaderboardManager);
         getServer().getPluginManager().registerEvents(new WardenTargetFilter(), this);
+        Bukkit.getPluginManager().registerEvents(new SignPlaceListener(), this);
         Bukkit.getPluginManager().registerEvents(new BedProtectionListener(), this);
         excludedWorldNames = getConfig().getStringList("excluded_worlds");
         Objects.requireNonNull(getCommand("trailteam")).setExecutor(trailTeamCmd);
@@ -287,47 +286,6 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         }
     }
 
-    @EventHandler
-    public void onSignPlace(BlockPlaceEvent event) {
-        Block block = event.getBlockPlaced();
-        String worldName = block.getWorld().getName();
-
-        // 只在試煉世界中攔截
-        if (!worldName.startsWith("trial_")) return;
-
-        Material type = block.getType();
-        boolean isSign = switch (type) {
-            // 直立 & 牆面告示牌
-            case OAK_SIGN, SPRUCE_SIGN, BIRCH_SIGN, JUNGLE_SIGN,
-                 ACACIA_SIGN, DARK_OAK_SIGN,
-                 OAK_WALL_SIGN, SPRUCE_WALL_SIGN, BIRCH_WALL_SIGN,
-                 JUNGLE_WALL_SIGN, ACACIA_WALL_SIGN, DARK_OAK_WALL_SIGN -> true;
-
-            // 懸掛告示牌
-            case OAK_HANGING_SIGN, SPRUCE_HANGING_SIGN, BIRCH_HANGING_SIGN,
-                 JUNGLE_HANGING_SIGN, ACACIA_HANGING_SIGN, CHERRY_HANGING_SIGN,
-                 DARK_OAK_HANGING_SIGN, PALE_OAK_HANGING_SIGN, MANGROVE_HANGING_SIGN,
-                 BAMBOO_HANGING_SIGN, CRIMSON_HANGING_SIGN, WARPED_HANGING_SIGN -> true;
-
-            // 牆面懸掛告示牌
-            case OAK_WALL_HANGING_SIGN, SPRUCE_WALL_HANGING_SIGN,
-                 BIRCH_WALL_HANGING_SIGN, JUNGLE_WALL_HANGING_SIGN,
-                 ACACIA_WALL_HANGING_SIGN, CHERRY_WALL_HANGING_SIGN,
-                 DARK_OAK_WALL_HANGING_SIGN, MANGROVE_WALL_HANGING_SIGN,
-                 CRIMSON_WALL_HANGING_SIGN, WARPED_WALL_HANGING_SIGN,
-                 BAMBOO_WALL_HANGING_SIGN -> true;
-
-            default -> false;
-        };
-
-        if (isSign) {
-            event.setCancelled(true);
-            // 使用 Adventure Component API 傳送提示
-            event.getPlayer().sendMessage(
-                    Component.text("§c此地禁止放置任何告示牌！")
-            );
-        }
-    }
 
     @EventHandler
     public void onBlockBreak(BlockBreakEvent event) {
