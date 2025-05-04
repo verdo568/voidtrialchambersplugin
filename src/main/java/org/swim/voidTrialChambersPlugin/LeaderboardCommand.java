@@ -7,9 +7,11 @@ import org.bukkit.command.TabCompleter;
 import org.bukkit.entity.Player;
 import org.jetbrains.annotations.NotNull;
 
-import java.util.*;
-import java.util.stream.Collectors;
+import java.util.Collections;
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * /trialleaderboard <solo|team|kills> <地獄|吞夢噬念>
@@ -59,8 +61,8 @@ public class LeaderboardCommand implements CommandExecutor, TabCompleter {
 
         String display = DIFF_DISPLAY.get(diffKey);
         switch (typeKey) {
-            case "solo"  -> showSolo(player, diffKey, display);
-            case "team"  -> showTeam(player, diffKey, display);
+            case "solo" -> showSolo(player, diffKey, display);
+            case "team" -> showTeam(player, diffKey, display);
             case "kills" -> showKills(player, diffKey, display);
         }
         return true;
