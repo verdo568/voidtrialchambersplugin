@@ -18,7 +18,7 @@ public class WardenTargetFilter implements Listener {
 
         // 只在世界名以 "trail_" 开头时才生效
         String worldName = event.getEntity().getWorld().getName();
-        if (!worldName.startsWith("trail_")) return;
+        if (!worldName.startsWith("trial_")) return;
 
         // 如果目标不是玩家，就取消这个事件
         if (!(event.getTarget() instanceof Player)) {
