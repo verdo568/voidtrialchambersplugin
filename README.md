@@ -1,6 +1,6 @@
 # VoidTrialChambersPlugin
 
-**Minecraft API 版本**：1.21.4
+**Minecraft 版本**：1.21.4+
 
 ---
 
