@@ -1,13 +1,11 @@
 # VoidTrialChambersPlugin
 
-**Minecraft 版本**：1.21.4+
-
 ---
 
 ## 📜 插件概覽
 
 VoidTrialChambersPlugin 在「虛空」中為每位玩家生成獨立的 Trial Chamber 世界，並自動刷怪、計時與追蹤擊殺數。  
-適用於 Spigot / PaperMC 伺服器 (1.16 – 1.21.x)，支援 Java 17+。
+適用於 PaperMC 伺服器 (1.21.4+)，支援 Java 21。
 
 主要功能：
 - 為每位玩家創建獨立的 trial_* 世界  
