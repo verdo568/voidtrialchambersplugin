@@ -68,8 +68,6 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         Bukkit.getPluginManager().registerEvents(this, this);
         MonsterCleaner.startCleaningTask(this);
         trailtp trailTeamCmd = new trailtp(this);
-        saveDefaultConfig();
-        reloadConfig();
         leaderboardManager = new LeaderboardManager(this);
         TrialChambersCommand trialCmd = new TrialChambersCommand(this);
         LeaderboardCommand lbCmd = new LeaderboardCommand(leaderboardManager);
