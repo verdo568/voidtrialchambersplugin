@@ -31,34 +31,24 @@ import java.util.concurrent.ConcurrentHashMap;
 
 
 public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
+    // ===== 常量 =====
+    private static final int MAX_TRIAL_PLAYERS = 4; //每個試煉世界的最大玩家數量
 
-    // 每個試煉世界的最大玩家數量
-    private static final int MAX_TRIAL_PLAYERS = 4;
-    // 每位玩家的試煉世界映射
-    final Map<UUID, World> playerTrialWorlds = new ConcurrentHashMap<>();
-    // MobSpawner 任務映射
-    final Map<UUID, WorldMobSpawnerTask> spawnerTasks = new ConcurrentHashMap<>();
-    // 試煉世界冷卻時間
-    final Map<UUID, Long> trialCooldowns = new ConcurrentHashMap<>();
-    // 冷卻時間的 BossBar
-    final Map<UUID, BossBar> cooldownBars = new ConcurrentHashMap<>();
-    // 冷卻時間的任務
-    final Map<UUID, BukkitTask> cooldownTasks = new ConcurrentHashMap<>();
-    // 玩家放置的床
-    final Set<Location> playerPlacedBeds = new HashSet<>();
-    // 新增：世界最後訪問時間
-    final Map<String, Long> worldLastAccessed = new ConcurrentHashMap<>();
-    // 原始位置備份
-    final Map<UUID, Location> originalLocations = new ConcurrentHashMap<>();
-    // 玩家難度映射
-    final Map<UUID, TrialDifficulty> playerDifficulties = new ConcurrentHashMap<>();
-    //每個試煉世界當前的擊殺數
-    final Map<String, Integer> worldKillCounts = new ConcurrentHashMap<>();
-    // 每個試煉世界的開始時間（毫秒）
-    final Map<String, Long> worldStartTimes = new ConcurrentHashMap<>();
-    // 目前正在進行的試煉會話
-    final Map<String, TrialSession> activeTrialSessions = new ConcurrentHashMap<>();
-    // 排除處理的世界名單
+    // ===== 核心映射 =====
+    final Map<UUID, World> playerTrialWorlds = new ConcurrentHashMap<>();// 每位玩家的試煉世界映射
+    final Map<UUID, WorldMobSpawnerTask> spawnerTasks = new ConcurrentHashMap<>();// MobSpawner 任務映射
+    final Map<UUID, Long> trialCooldowns = new ConcurrentHashMap<>();// 試煉世界冷卻時間
+    final Map<UUID, BossBar> cooldownBars = new ConcurrentHashMap<>();// 冷卻時間的 BossBar
+    final Map<UUID, BukkitTask> cooldownTasks = new ConcurrentHashMap<>();// 冷卻時間的任務
+    final Map<UUID, TrialDifficulty> playerDifficulties = new ConcurrentHashMap<>();// 玩家難度映射
+    final Map<UUID, Location> originalLocations = new ConcurrentHashMap<>();// 原始位置備份
+    final Map<String, Long> worldLastAccessed = new ConcurrentHashMap<>();// 新增：世界最後訪問時間
+    final Map<String, Integer> worldKillCounts = new ConcurrentHashMap<>();//每個試煉世界當前的擊殺數
+    final Map<String, Long> worldStartTimes = new ConcurrentHashMap<>();// 每個試煉世界的開始時間（毫秒）
+    final Map<String, TrialSession> activeTrialSessions = new ConcurrentHashMap<>();// 目前正在進行的試煉會話
+
+    // ===== 其他集合 =====
+    final Set<Location> playerPlacedBeds = new HashSet<>();// 玩家放置的床
     List<String> excludedWorldNames;
     CleanUpManager cleanUpManager;
     LeaderboardManager leaderboardManager;
@@ -91,11 +81,10 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
 
     @Override
     public void onDisable() {
-        // 1. 停止所有刷怪任務
+        // 停止所有刷怪任務
         spawnerTasks.values().forEach(WorldMobSpawnerTask::stop);
-        // 2. 踢出並清理所有試煉世界
+        // 踢出並清理所有試煉世界
         for (World world : new ArrayList<>(playerTrialWorlds.values())) {
-            // 踢出玩家
             for (Player p : world.getPlayers()) {
                 Component msg = Component.text("§c伺服器/插件正在關閉，您已被踢出試煉世界");
                 p.kick(msg);
@@ -104,14 +93,14 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             cleanUpManager.clearEntityAndPoiFolders(world);
         }
 
-        // 3. 清空所有運行時記錄
+        // 清空所有運行時記錄
         playerPlacedBeds.clear();
         worldLastAccessed.clear();
         originalLocations.clear();
         playerDifficulties.clear();
         trialCooldowns.clear();
 
-        // 4. 取消並移除所有冷卻進度條與任務
+        // 取消並移除所有冷卻進度條與任務
         cooldownBars.values().forEach(BossBar::removeAll);
         cooldownBars.clear();
         cooldownTasks.values().forEach(BukkitTask::cancel);
@@ -120,7 +109,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         getLogger().info("Void Trial Chambers Plugin 已停用");
     }
 
-    // 建立個人試煉世界並確保 data 資料夾及空檔案存在
+    // ===== 世界創建與準備 =====
     World createPersonalTrialWorld(UUID uuid) {
         String worldName = "trial_" + uuid;
         World existingWorld = Bukkit.getWorld(worldName);
