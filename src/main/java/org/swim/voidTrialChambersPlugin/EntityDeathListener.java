@@ -41,17 +41,17 @@ public class EntityDeathListener implements Listener {
         if (!(last instanceof EntityDamageByEntityEvent dbe)) return;
         if (!(dbe.getDamager() instanceof Player player)) return;
 
-        // 累計擊殺
+        // 將此試煉世界的擊殺數量加一
         int count = plugin.worldKillCounts.getOrDefault(name, 0) + 1;
         plugin.worldKillCounts.put(name, count);
 
-        // 更新試煉 session
+        // 更新或建立該世界的試煉會話資訊，並紀錄玩家參與與擊殺
         VoidTrialChambersPlugin.TrialSession session = plugin.activeTrialSessions
                 .computeIfAbsent(name, k -> new VoidTrialChambersPlugin.TrialSession(name));
         session.addParticipant(player);
         session.recordKill(player.getUniqueId());
 
-        // 1. 動態提醒
+        // 根據難度在特定擊殺數量時進行動態提醒
         int reminderMax = diff == VoidTrialChambersPlugin.TrialDifficulty.JUDGMENT
                 ? 450 : 250;
         if (count % 50 == 0 && count <= reminderMax) {
@@ -61,12 +61,12 @@ public class EntityDeathListener implements Listener {
             }
         }
 
-        // 記錄開始時間
+        // 若為第一次擊殺，記錄試煉開始的時間點
         if (count == 1) {
             plugin.worldStartTimes.put(name, System.currentTimeMillis());
         }
 
-        // 2. 判斷是否完成
+        // 檢查是否達到完成條件
         int finishCount = diff == VoidTrialChambersPlugin.TrialDifficulty.JUDGMENT
                 ? 500 : 300;
         if (count >= finishCount) {
@@ -79,27 +79,27 @@ public class EntityDeathListener implements Listener {
                     ? minutes + " 分 " + seconds + " 秒"
                     : seconds + " 秒");
 
-            // 停止刷怪並清場
+            // 停止刷怪任務並移除所有殘餘怪物
             VoidTrialChambersPlugin.WorldMobSpawnerTask spawner = plugin.spawnerTasks.remove(owner);
             if (spawner != null) spawner.stop();
             world.getEntities().stream()
                     .filter(e -> e instanceof Monster)
                     .forEach(Entity::remove);
 
-            // 更新排行榜
+            // 更新排行榜資料
             VoidTrialChambersPlugin.TrialSession current = plugin.activeTrialSessions.get(name);
             if (current != null) {
                 current.markCompleted();
                 boolean solo = current.isSolo();
 
-                // 時間榜
+                // 更新通關時間排行榜
                 LeaderboardManager.TimeLeaderboardEntry timeEntry =
                         new LeaderboardManager.TimeLeaderboardEntry(
                                 name, current.getParticipantNames(), elapsedMs);
                 plugin.leaderboardManager.updateTimeLeaderboard(
                         diff.name(), timeEntry, solo);
 
-                // 擊殺榜
+                // 更新擊殺數排行榜
                 LeaderboardManager.KillsLeaderboardEntry killsEntry =
                         new LeaderboardManager.KillsLeaderboardEntry(
                                 name, current.getPlayerKillRecords());
@@ -109,14 +109,14 @@ public class EntityDeathListener implements Listener {
                 plugin.leaderboardManager.saveLeaderboards();
             }
 
-            // 廣播完成訊息
+            // 廣播試煉完成訊息給所有玩家
             String finishMsg = String.format(
                     "§6【試煉完成】恭喜，在%s難度的試煉副本已擊殺 %d 隻怪物！ 耗時：%s\n" +
                             "§a排行榜已更新，可使用 /trialleaderboard solo/team/kills 查看",
                     diffNameZh, finishCount, timeStr);
             world.getPlayers().forEach(p -> p.sendMessage(finishMsg));
 
-            // 重置
+            // 重置該試煉世界的相關數據
             plugin.worldKillCounts.remove(name);
             plugin.worldStartTimes.remove(name);
             plugin.activeTrialSessions.remove(name);

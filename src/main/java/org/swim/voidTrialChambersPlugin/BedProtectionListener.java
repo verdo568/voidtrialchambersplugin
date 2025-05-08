@@ -12,7 +12,7 @@ import org.bukkit.event.entity.EntityExplodeEvent;
 
 public class BedProtectionListener implements Listener {
 
-    // 只在 trial_ 開頭的世界中禁止放置床
+    // 僅在世界名稱以 "trial_" 開頭時，禁止玩家放置床鋪
     @EventHandler
     public void onBedPlace(BlockPlaceEvent event) {
         World world = event.getBlockPlaced().getWorld();
@@ -21,7 +21,7 @@ public class BedProtectionListener implements Listener {
         }
     }
 
-    // 只在 trial_ 開頭的世界中禁止破壞床
+    // 僅在世界名稱以 "trial_" 開頭時，禁止玩家破壞床鋪
     @EventHandler
     public void onBedBreak(BlockBreakEvent event) {
         String worldName = event.getBlock().getWorld().getName();
@@ -30,7 +30,7 @@ public class BedProtectionListener implements Listener {
         }
     }
 
-    // 禁止活塞推動床
+    // 禁止活塞在延伸時推動床鋪
     @EventHandler
     public void onPistonExtend(BlockPistonExtendEvent event) {
         String worldName = event.getBlock().getWorld().getName();
@@ -39,7 +39,7 @@ public class BedProtectionListener implements Listener {
         }
     }
 
-    // 禁止活塞縮回時推動床
+    // 禁止活塞在收縮時推動床鋪
     @EventHandler
     public void onPistonRetract(BlockPistonRetractEvent event) {
         String worldName = event.getBlock().getWorld().getName();
@@ -48,7 +48,7 @@ public class BedProtectionListener implements Listener {
         }
     }
 
-    // 禁止 TNT 或其他爆炸摧毀床
+    // 在世界名稱以 "trial_" 開頭時，移除爆炸對床鋪造成的任何破壞
     @EventHandler
     public void onEntityExplode(EntityExplodeEvent event) {
         if (event.getLocation().getWorld().getName().startsWith("trial_")) {

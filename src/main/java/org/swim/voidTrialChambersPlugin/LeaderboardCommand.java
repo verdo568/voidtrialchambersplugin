@@ -14,7 +14,8 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
- * /trialleaderboard <solo|team|kills> <地獄|吞夢噬念>
+ * 顯示試煉排行榜指令
+ * 用法: /trialleaderboard <solo|team|kills> <地獄|吞夢噬念>
  */
 public class LeaderboardCommand implements CommandExecutor, TabCompleter {
     private static final Map<String, String> TYPE_KEY_MAP = Map.of(
@@ -51,7 +52,7 @@ public class LeaderboardCommand implements CommandExecutor, TabCompleter {
             return true;
         }
 
-        // 使用 Locale.ROOT 以避免默认区域设置带来的差异
+        // 使用 Locale.ROOT 以避免預設區域設定造成的差異
         String typeKey = TYPE_KEY_MAP.get(args[0].toLowerCase(Locale.ROOT));
         String diffKey = DIFFICULTY_KEY_MAP.get(args[1]);
         if (typeKey == null || diffKey == null) {
@@ -133,7 +134,7 @@ public class LeaderboardCommand implements CommandExecutor, TabCompleter {
                     .filter(key -> key.toLowerCase(Locale.ROOT).startsWith(prefix))
                     .toList();
         } else if (args.length == 2) {
-            // 中文不受大小寫影響，此处无需 toLowerCase
+            // 中文不受大小寫影響，此處不需使用 toLowerCase
             String prefix = args[1];
             return DIFFICULTY_KEY_MAP.keySet().stream()
                     .filter(key -> key.startsWith(prefix))
