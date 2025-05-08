@@ -14,7 +14,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 負責排行榜資料的載入/儲存與更新
+ * 負責處理排行榜資料的載入、儲存及更新
  */
 public class LeaderboardManager {
     private final File soloTimeFile;
@@ -30,7 +30,7 @@ public class LeaderboardManager {
     public LeaderboardManager(JavaPlugin plugin) {
         File dataFolder = plugin.getDataFolder();
         if (!dataFolder.exists() && !dataFolder.mkdirs()) {
-            plugin.getLogger().warning("無法創建資料夾: " + dataFolder.getAbsolutePath());
+            plugin.getLogger().warning("無法建立資料夾: " + dataFolder.getAbsolutePath());
         }
 
         soloTimeFile = new File(dataFolder, "solo_time_leaderboard.json");
@@ -38,27 +38,27 @@ public class LeaderboardManager {
         killsFile = new File(dataFolder, "kills_leaderboard.json");
 
         try {
-            // 嘗試建立檔案，並檢查 createNewFile 回傳值
+            // 嘗試建立檔案並檢查 createNewFile 的回傳結果
             if (!soloTimeFile.exists()) {
                 boolean created = soloTimeFile.createNewFile();
                 if (!created) {
-                    plugin.getLogger().warning("創建文件失敗: " + soloTimeFile.getName());
+                    plugin.getLogger().warning("創建檔案失敗: " + soloTimeFile.getName());
                 }
             }
             if (!teamTimeFile.exists()) {
                 boolean created = teamTimeFile.createNewFile();
                 if (!created) {
-                    plugin.getLogger().warning("創建文件失敗: " + teamTimeFile.getName());
+                    plugin.getLogger().warning("創建檔案失敗: " + teamTimeFile.getName());
                 }
             }
             if (!killsFile.exists()) {
                 boolean created = killsFile.createNewFile();
                 if (!created) {
-                    plugin.getLogger().warning("創建文件失敗: " + killsFile.getName());
+                    plugin.getLogger().warning("創建檔案失敗: " + killsFile.getName());
                 }
             }
         } catch (IOException e) {
-            plugin.getLogger().warning("無法創建排行榜文件: " + e.getMessage());
+            plugin.getLogger().warning("無法建立排行榜檔案: " + e.getMessage());
         }
 
         loadLeaderboards();
@@ -123,7 +123,7 @@ public class LeaderboardManager {
         return killsLeaderboard.getOrDefault(diff, Collections.emptyList());
     }
 
-    // ---- Entry 類 ----
+    // ---- 條目類別 ----
 
     public static class TimeLeaderboardEntry {
         private final List<String> playerNames;
