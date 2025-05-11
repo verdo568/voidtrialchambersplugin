@@ -1,6 +1,7 @@
 package org.swim.voidTrialChambersPlugin;
 
 import net.kyori.adventure.text.Component;
+import org.bukkit.GameMode;
 import org.bukkit.World;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Monster;
@@ -16,9 +17,11 @@ import java.util.UUID;
 public class EntityDeathListener implements Listener {
 
     private final VoidTrialChambersPlugin plugin;
+    private final ChestRewardManager chestRewardManager;
 
     public EntityDeathListener(VoidTrialChambersPlugin plugin) {
         this.plugin = plugin;
+        this.chestRewardManager = plugin.getChestRewardManager();
     }
 
     @EventHandler
@@ -66,7 +69,7 @@ public class EntityDeathListener implements Listener {
             plugin.worldStartTimes.put(name, System.currentTimeMillis());
         }
 
-        // 檢查是否達到完成條件
+        // 檢查是否達到完成條件 500/300
         int finishCount = diff == VoidTrialChambersPlugin.TrialDifficulty.JUDGMENT
                 ? 500 : 300;
         if (count >= finishCount) {
@@ -115,7 +118,12 @@ public class EntityDeathListener implements Listener {
                             "§a排行榜已更新，可使用 /trialleaderboard solo/team/kills 查看",
                     diffNameZh, finishCount, timeStr);
             world.getPlayers().forEach(p -> p.sendMessage(finishMsg));
-
+            // 給予所有參與者獎勵寶箱（僅限生存模式玩家）
+            for (Player p : session.getParticipants()) {
+                if (p.getGameMode() == GameMode.SURVIVAL) {
+                    chestRewardManager.giveRewardChestBeside(p);
+                }
+            }
             // 重置該試煉世界的相關數據
             plugin.worldKillCounts.remove(name);
             plugin.worldStartTimes.remove(name);

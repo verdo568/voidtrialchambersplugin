@@ -46,12 +46,12 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
     final Map<String, Integer> worldKillCounts = new ConcurrentHashMap<>();// 每個試煉世界的擊殺數映射
     final Map<String, Long> worldStartTimes = new ConcurrentHashMap<>();// 每個試煉世界的開始時間（毫秒）映射
     final Map<String, TrialSession> activeTrialSessions = new ConcurrentHashMap<>();// 當前所有活躍試煉會話映射
-
     // ===== 其他集合 =====
     final Set<Location> playerPlacedBeds = new HashSet<>();// 玩家在試煉世界中放置的床位置集合
     List<String> excludedWorldNames;
     CleanUpManager cleanUpManager;
     LeaderboardManager leaderboardManager;
+    private ChestRewardManager chestRewardManager;
 
     @Override
     public void onEnable() {
@@ -63,6 +63,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         trailtp trailTeamCmd = new trailtp(this);
         leaderboardManager = new LeaderboardManager(this);
         TrialChambersCommand trialCmd = new TrialChambersCommand(this);
+        this.chestRewardManager = new ChestRewardManager(this);
         LeaderboardCommand lbCmd = new LeaderboardCommand(leaderboardManager);
         getServer().getPluginManager().registerEvents(new WardenTargetFilter(), this);
         Bukkit.getPluginManager().registerEvents(new SignPlaceListener(), this);
@@ -78,7 +79,6 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         // 初始化並排程定期清理任務（每 5 分鐘執行一次）
         this.cleanUpManager = new CleanUpManager(this);
         cleanUpManager.schedulePeriodicCleanup();
-        getLogger().info("記憶體清理任務已啟用");
         getLogger().info("Void Trial Chambers Plugin 已啟用");
     }
 
@@ -142,6 +142,13 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             getLogger().info("Created personal trial world: " + worldName);
         }
         return world;
+    }
+
+    /**
+     * 提供給 Listener 或其他類別調用的獎勵寶箱管理器存取方法
+     */
+    public ChestRewardManager getChestRewardManager() {
+        return chestRewardManager;
     }
 
     // 新增玩家進入/離開世界事件處理
@@ -260,6 +267,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         if (!world.getName().startsWith("trial_")) return;
         event.setCancelled(true);
     }
+
     // 協助外部 Listener 取得試煉世界擁有者 UUID
     UUID findWorldOwner(String worldName) {
         for (var entry : playerTrialWorlds.entrySet()) {
@@ -308,8 +316,10 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         public List<EntityType> getMobs() {
             return switch (this) {
                 case NORMAL -> List.of(EntityType.ZOMBIE, EntityType.SKELETON, EntityType.SPIDER);
-                case HELL -> List.of(EntityType.ZOMBIE, EntityType.CREEPER, EntityType.ENDERMAN, EntityType.WITCH, EntityType.BOGGED, EntityType.STRAY, EntityType.PHANTOM, EntityType.CAVE_SPIDER, EntityType.CAVE_SPIDER, EntityType.ILLUSIONER, EntityType.PIGLIN_BRUTE);
-                case JUDGMENT -> List.of(EntityType.ZOMBIE, EntityType.ENDERMAN, EntityType.WITCH, EntityType.BOGGED, EntityType.STRAY, EntityType.CAVE_SPIDER, EntityType.ILLUSIONER, EntityType.PIGLIN_BRUTE, EntityType.BREEZE);
+                case HELL ->
+                        List.of(EntityType.ZOMBIE, EntityType.CREEPER, EntityType.ENDERMAN, EntityType.WITCH, EntityType.BOGGED, EntityType.STRAY, EntityType.PHANTOM, EntityType.CAVE_SPIDER, EntityType.CAVE_SPIDER, EntityType.ILLUSIONER, EntityType.PIGLIN_BRUTE);
+                case JUDGMENT ->
+                        List.of(EntityType.ZOMBIE, EntityType.ENDERMAN, EntityType.WITCH, EntityType.BOGGED, EntityType.STRAY, EntityType.CAVE_SPIDER, EntityType.ILLUSIONER, EntityType.PIGLIN_BRUTE, EntityType.BREEZE);
                 default -> List.of();
             };
         }
@@ -347,18 +357,22 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             this.playerKills = new HashMap<>();
             this.completed = false;
         }
+
         // 將玩家加入此試煉會話
         public void addParticipant(Player player) {
             participants.put(player.getUniqueId(), player.getName());
         }
+
         // 紀錄玩家擊殺數
         public void recordKill(UUID playerId) {
             playerKills.put(playerId, playerKills.getOrDefault(playerId, 0) + 1);
         }
+
         // 檢查是否為單人試煉
         public boolean isSolo() {
             return participants.size() == 1;
         }
+
         // 取得參與者名稱列表
         public List<String> getParticipantNames() {
             return new ArrayList<>(participants.values());
@@ -373,13 +387,27 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             }
             return records;
         }
+
         // 標記試煉已完成
         public void markCompleted() {
             this.completed = true;
         }
+
         // 檢查試煉是否已完成
         public boolean isCompleted() {
             return completed;
+        }
+
+        //把參與者 UUID 轉成 Player 物件，只回傳在線上的玩家
+        public List<Player> getParticipants() {
+            List<Player> list = new ArrayList<>();
+            for (UUID id : participants.keySet()) {
+                Player p = Bukkit.getPlayer(id);
+                if (p != null) {
+                    list.add(p);
+                }
+            }
+            return list;
         }
     }
 
@@ -387,21 +415,26 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         @Override
         public void generateSurface(@NotNull WorldInfo info, @NotNull Random rand, int x, int z, @NotNull ChunkData data) {
         }
+
         @Override
         public void generateCaves(@NotNull WorldInfo info, @NotNull Random rand, int x, int z, @NotNull ChunkData data) {
         }
+
         @Override
         public boolean shouldGenerateCaves() {
             return false;
         }
+
         @Override
         public boolean shouldGenerateDecorations() {
             return false;
         }
+
         @Override
         public boolean shouldGenerateMobs() {
             return false;
         }
+
         @Override
         public boolean shouldGenerateStructures() {
             return false;
@@ -423,6 +456,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             this.world = world;
             this.diff = diff;
         }
+
         // 啟動刷怪任務：立即執行，之後每 3~5 秒重複
         public void start() {
             task = new BukkitRunnable() {
@@ -432,6 +466,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
                 }
             }.runTaskTimer(VoidTrialChambersPlugin.this, 0L, (rnd.nextInt(3) + 3) * 20L);
         }
+
         // 產生一波怪物
         private void spawnWave() {
             if (!world.getName().startsWith("trial_")) return;
@@ -477,6 +512,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
                 spawnAroundPlayer(p, perPlayer);
             }
         }
+
         // 給所有生存模式玩家添加負面特效
         private void applyNegativeEffectsToSurvival() {
             int duration = 200;// 持續時間（刻）約 10 秒
@@ -545,6 +581,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
                 }
             }
         }
+
         // 在指定玩家周圍隨機位置生成怪物
         private void spawnAroundPlayer(Player p, int count) {
             List<EntityType> types = diff.getMobs();
@@ -589,6 +626,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
                 spawned++;
             }
         }
+
         // 檢查生成點下方是否為實心方塊，且周圍空間足夠
         private boolean isSafeSpawnLocation(Location loc) {
             Block below = loc.clone().add(0, -1, 0).getBlock();
@@ -603,6 +641,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             }
             return true;
         }
+
         // 檢查位置是否靠近非玩家放置的原版床
         private boolean isNearVanillaBed(Location loc) {
             for (int dx = -8; dx <= 8; dx++) {
@@ -621,6 +660,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             }
             return false;
         }
+
         // 停止此刷怪任務
         public void stop() {
             if (task != null) task.cancel();
