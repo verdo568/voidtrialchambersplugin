@@ -62,6 +62,7 @@ public class ChestRewardManager {
                 new ItemStack(Material.DIAMOND, 3),
                 new ItemStack(Material.GOLD_INGOT, 5),
                 new ItemStack(Material.ENCHANTED_GOLDEN_APPLE, 2),
+                new ItemStack(Material.EXPERIENCE_BOTTLE, 16),
                 new ItemStack(Material.EMERALD, 10)
         );
 
