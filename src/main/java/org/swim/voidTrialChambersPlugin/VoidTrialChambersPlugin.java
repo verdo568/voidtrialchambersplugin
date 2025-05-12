@@ -8,6 +8,7 @@ import org.bukkit.attribute.AttributeInstance;
 import org.bukkit.block.Bed;
 import org.bukkit.block.Block;
 import org.bukkit.boss.BossBar;
+import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.*;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -26,6 +27,8 @@ import org.jetbrains.annotations.NotNull;
 
 import java.io.File;
 import java.io.IOException;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -46,12 +49,16 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
     final Map<String, Integer> worldKillCounts = new ConcurrentHashMap<>();// 每個試煉世界的擊殺數映射
     final Map<String, Long> worldStartTimes = new ConcurrentHashMap<>();// 每個試煉世界的開始時間（毫秒）映射
     final Map<String, TrialSession> activeTrialSessions = new ConcurrentHashMap<>();// 當前所有活躍試煉會話映射
+    final Map<UUID, UserDailyRecord> dailyRecords = new ConcurrentHashMap<>();// 玩家每日獎勵紀錄映射
+
     // ===== 其他集合 =====
     final Set<Location> playerPlacedBeds = new HashSet<>();// 玩家在試煉世界中放置的床位置集合
     List<String> excludedWorldNames;
     CleanUpManager cleanUpManager;
     LeaderboardManager leaderboardManager;
     private ChestRewardManager chestRewardManager;
+    private File dailyRecordFile;
+    private YamlConfiguration dailyRecordConfig;
 
     @Override
     public void onEnable() {
@@ -64,6 +71,13 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         leaderboardManager = new LeaderboardManager(this);
         TrialChambersCommand trialCmd = new TrialChambersCommand(this);
         this.chestRewardManager = new ChestRewardManager(this);
+        if (!getDataFolder().exists()) {
+            getDataFolder().mkdirs();
+        }
+        // 載入每日紀錄檔
+        dailyRecordFile = new File(getDataFolder(), "daily_records.yml");
+        dailyRecordConfig = YamlConfiguration.loadConfiguration(dailyRecordFile);
+        loadUserDailyRecords();
         LeaderboardCommand lbCmd = new LeaderboardCommand(leaderboardManager);
         getServer().getPluginManager().registerEvents(new WardenTargetFilter(), this);
         Bukkit.getPluginManager().registerEvents(new SignPlaceListener(), this);
@@ -95,7 +109,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             // 卸載並清除世界的 entities、poi、region 資料夾
             cleanUpManager.clearEntityAndPoiFolders(world);
         }
-
+        saveUserDailyRecords();
         // 清除所有運行時資料
         playerPlacedBeds.clear();
         worldLastAccessed.clear();
@@ -112,6 +126,66 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         getLogger().info("Void Trial Chambers Plugin 已停用");
     }
 
+    /**
+     * 檢查玩家今天是否還能領取。
+     */
+    public boolean canClaim(UUID playerId) {
+        LocalDate today = LocalDate.now(ZoneOffset.ofHours(8));
+        UserDailyRecord rec = dailyRecords.get(playerId);
+        if (rec == null || !today.equals(rec.getDate())) {
+            return true;
+        }
+        return rec.getCount() < 5;// 每日最多 5 次領取
+    }
+    /**
+     * 記錄一次領取，並立即儲存到檔案。
+     */
+    public void recordClaim(UUID playerId) {
+        LocalDate today = LocalDate.now(ZoneOffset.ofHours(8));
+        UserDailyRecord rec = dailyRecords.compute(playerId, (k, v) -> {
+            if (v == null || !today.equals(v.getDate())) {
+                return new UserDailyRecord(today, 1);
+            } else {
+                v.setCount(v.getCount() + 1);
+                return v;
+            }
+        });
+        // 立刻儲存
+        saveUserDailyRecords();
+    }
+    private void loadUserDailyRecords() {
+        if (dailyRecordConfig.contains("records")) {
+            for (String key : Objects.requireNonNull(dailyRecordConfig.getConfigurationSection("records")).getKeys(false)) {
+                String path = "records." + key;
+                String dateStr = dailyRecordConfig.getString(path + ".date");
+                int count = dailyRecordConfig.getInt(path + ".count", 0);
+                try {
+                    LocalDate date = null;
+                    if (dateStr != null) {
+                        date = LocalDate.parse(dateStr);
+                    }
+                    dailyRecords.put(UUID.fromString(key), new UserDailyRecord(date, count));
+                } catch (Exception e) {
+                    getLogger().warning("無法解析每日領取記錄: " + key + " => " + e.getMessage());
+                }
+            }
+        }
+    }
+    private void saveUserDailyRecords() {
+        dailyRecordConfig.set("records", null); // 清空
+        for (Map.Entry<UUID, UserDailyRecord> entry : dailyRecords.entrySet()) {
+            String key = entry.getKey().toString();
+            UserDailyRecord rec = entry.getValue();
+            String base = "records." + key;
+            dailyRecordConfig.set(base + ".date", rec.getDate().toString());
+            dailyRecordConfig.set(base + ".count", rec.getCount());
+        }
+        try {
+            dailyRecordConfig.save(dailyRecordFile);
+        } catch (IOException e) {
+            getLogger().severe("無法儲存每日領取記錄: " + e.getMessage());
+        }
+    }
     // ===== 世界創建與準備 =====
     World createPersonalTrialWorld(UUID uuid) {
         String worldName = "trial_" + uuid;
