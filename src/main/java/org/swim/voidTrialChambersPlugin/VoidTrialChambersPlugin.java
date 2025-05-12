@@ -677,6 +677,19 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
                 EntityType type = types.get(rnd.nextInt(types.size()));
                 LivingEntity mob = (LivingEntity) world.spawnEntity(loc, type);
                 mob.setCustomNameVisible(false);
+                // Hell 難度：添加抗性 I
+                if (diff == TrialDifficulty.HELL) {
+                    mob.addPotionEffect(new PotionEffect(
+                            PotionEffectType.RESISTANCE,
+                            Integer.MAX_VALUE,
+                            0
+                    ));
+                    mob.addPotionEffect(new PotionEffect(
+                            PotionEffectType.STRENGTH,
+                            Integer.MAX_VALUE,
+                            2
+                    ));
+                }
                 // 吞夢噬念 難度下加入力量 III 與抗性 II，並提升最大生命值
                 if (diff == TrialDifficulty.JUDGMENT) {
                     mob.addPotionEffect(new PotionEffect(
