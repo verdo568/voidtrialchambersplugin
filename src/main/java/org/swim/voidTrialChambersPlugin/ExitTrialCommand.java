@@ -47,30 +47,33 @@ public class ExitTrialCommand implements CommandExecutor {
             return true;
         }
 
-        // 取得主世界 (world) 實體
+        // 傳送玩家回主世界並提示
         World main = Bukkit.getWorld("world");
         if (main != null) {
-            // 傳送玩家到主世界的重生點
             p.teleport(main.getSpawnLocation());
-            // 發送退出提示訊息
             p.sendMessage("§6你已退出試煉並傳送至主世界");
         }
 
-        // 取得玩家唯一識別碼
         UUID uid = p.getUniqueId();
+
         // 停止並移除玩家對應的生怪器任務
         VoidTrialChambersPlugin.WorldMobSpawnerTask spawner = plugin.spawnerTasks.remove(uid);
         if (spawner != null) {
             spawner.stop();
         }
 
-        // 移除玩家試煉世界並清理該世界的生物與 POI 資料夾
+        // 移除並清理玩家專屬的 trial 世界
         World w = plugin.playerTrialWorlds.remove(uid);
         if (w != null) {
+            String worldName = w.getName();
             plugin.cleanUpManager.clearEntityAndPoiFolders(w);
+            // 移除所有相關快取資料
+            plugin.playerDifficulties.remove(uid);
+            plugin.originalLocations.remove(uid);
+            plugin.worldKillCounts.remove(worldName);
+            plugin.activeTrialSessions.remove(worldName);
         }
 
-        // 指令處理完成
         return true;
     }
 }
