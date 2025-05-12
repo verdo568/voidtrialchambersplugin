@@ -6,10 +6,8 @@ import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
-import org.bukkit.potion.PotionEffectType;
 import org.jetbrains.annotations.NotNull;
 
-import java.util.Arrays;
 import java.util.UUID;
 
 /**
@@ -52,13 +50,6 @@ public class ExitTrialCommand implements CommandExecutor {
         // 取得主世界 (world) 實體
         World main = Bukkit.getWorld("world");
         if (main != null) {
-            // 移除試煉中可能套用的所有效果
-            for (PotionEffectType type : Arrays.asList(
-                    PotionEffectType.BLINDNESS, PotionEffectType.SLOW_FALLING,
-                    PotionEffectType.SLOWNESS, PotionEffectType.MINING_FATIGUE,
-                    PotionEffectType.RESISTANCE)) {
-                p.removePotionEffect(type);
-            }
             // 傳送玩家到主世界的重生點
             p.teleport(main.getSpawnLocation());
             // 發送退出提示訊息

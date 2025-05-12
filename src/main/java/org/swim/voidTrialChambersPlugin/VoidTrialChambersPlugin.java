@@ -687,7 +687,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
                     mob.addPotionEffect(new PotionEffect(
                             PotionEffectType.STRENGTH,
                             Integer.MAX_VALUE,
-                            2
+                            0
                     ));
                 }
                 // 吞夢噬念 難度下加入力量 III 與抗性 II，並提升最大生命值

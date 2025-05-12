@@ -124,12 +124,19 @@ public class TrialChambersCommand implements CommandExecutor, TabCompleter {
         plugin.playerTrialWorlds.put(uid, personal);
         plugin.playerDifficulties.put(uid, diff);
 
-        // ※ 修正：WorldMobSpawnerTask 是非 static 的內部類，必須用 plugin.new 來實例化 ※
+        VoidTrialChambersPlugin.WorldMobSpawnerTask oldTask = plugin.spawnerTasks.remove(uid);
+        if (oldTask != null) {
+            oldTask.stop();
+        }
+        World oldWorld = plugin.playerTrialWorlds.get(uid);
+        if (oldWorld != null) {
+            plugin.worldKillCounts.remove(oldWorld.getName());
+        }
+
         VoidTrialChambersPlugin.WorldMobSpawnerTask spawner =
                 plugin.new WorldMobSpawnerTask(personal, diff);
         plugin.spawnerTasks.put(uid, spawner);
         spawner.start();
-
         String worldName = personal.getName();
         plugin.worldKillCounts.put(worldName, 0);
 
