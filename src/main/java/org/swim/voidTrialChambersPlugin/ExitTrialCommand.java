@@ -20,6 +20,7 @@ public class ExitTrialCommand implements CommandExecutor {
 
     /**
      * 建構子：注入主插件實例
+     *
      * @param plugin 主插件物件，用於存取設定與任務管理
      */
     public ExitTrialCommand(VoidTrialChambersPlugin plugin) {
@@ -28,6 +29,7 @@ public class ExitTrialCommand implements CommandExecutor {
 
     /**
      * 指令呼叫處理器
+     *
      * @param sender 指令發送者
      * @param cmd    指令物件
      * @param label  指令別名

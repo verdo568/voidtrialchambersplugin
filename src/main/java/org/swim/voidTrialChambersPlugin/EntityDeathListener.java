@@ -71,7 +71,7 @@ public class EntityDeathListener implements Listener {
 
         // 檢查是否達到完成條件 500/300
         int finishCount = diff == VoidTrialChambersPlugin.TrialDifficulty.JUDGMENT
-                ? 500 : 300;
+                ? 500 : 2;
         if (count >= finishCount) {
             long start = plugin.worldStartTimes.getOrDefault(name, System.currentTimeMillis());
             long elapsedMs = System.currentTimeMillis() - start;
@@ -118,10 +118,11 @@ public class EntityDeathListener implements Listener {
                             "§a排行榜已更新，可使用 /trialleaderboard solo/team/kills 查看",
                     diffNameZh, finishCount, timeStr);
             world.getPlayers().forEach(p -> p.sendMessage(finishMsg));
-            // 給予所有參與者獎勵寶箱（僅限生存模式玩家）
+            // 試煉完成，給予參與者獎勵
             for (Player p : session.getParticipants()) {
                 if (p.getGameMode() == GameMode.SURVIVAL) {
-                    chestRewardManager.giveRewardChestBeside(p);
+                    // 傳入當前難度，分別下發不同獎勵
+                    chestRewardManager.giveRewardChestBeside(p, diff);
                 }
             }
             // 重置該試煉世界的相關數據

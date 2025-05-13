@@ -137,6 +137,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         }
         return rec.getCount() < 5;// 每日最多 5 次領取
     }
+
     /**
      * 記錄一次領取，並立即儲存到檔案。
      */
@@ -153,6 +154,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         // 立刻儲存
         saveUserDailyRecords();
     }
+
     private void loadUserDailyRecords() {
         if (dailyRecordConfig.contains("records")) {
             for (String key : Objects.requireNonNull(dailyRecordConfig.getConfigurationSection("records")).getKeys(false)) {
@@ -171,6 +173,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             }
         }
     }
+
     private void saveUserDailyRecords() {
         dailyRecordConfig.set("records", null); // 清空
         for (Map.Entry<UUID, UserDailyRecord> entry : dailyRecords.entrySet()) {
@@ -186,6 +189,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             getLogger().severe("無法儲存每日領取記錄: " + e.getMessage());
         }
     }
+
     // ===== 世界創建與準備 =====
     World createPersonalTrialWorld(UUID uuid) {
         String worldName = "trial_" + uuid;

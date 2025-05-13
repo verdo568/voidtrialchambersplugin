@@ -23,6 +23,7 @@ public class trailtp implements CommandExecutor, TabCompleter {
 
     /**
      * 構造函式，接收主插件實例（目前未使用）。
+     *
      * @param plugin 主插件物件
      */
     public trailtp(JavaPlugin plugin) {
