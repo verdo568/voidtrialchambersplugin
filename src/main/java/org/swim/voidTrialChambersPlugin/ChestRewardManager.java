@@ -12,78 +12,139 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.util.Vector;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
 
+/**
+ * 根據難度（HELL / JUDGMENT），在玩家腳旁放置一次性寶箱獎勵。
+ * 採用靜態預先計算的機率分佈，以減少執行時的物件配置與運算，提升效能。
+ */
 public class ChestRewardManager {
+    /**
+     * 靜態常量：為每種難度、每項道具，建立機率分佈清單(含累積權重)。
+     */
+    private static final Map<VoidTrialChambersPlugin.TrialDifficulty,
+            Map<Material, List<ChanceEntry>>> DISTRIBUTIONS = new EnumMap<>(VoidTrialChambersPlugin.TrialDifficulty.class);
+
+    static {
+        // ================================================
+        // 1. 初始化「地獄難度」的機率分佈表
+        // ================================================
+        Map<Material, List<ChanceEntry>> hellMap = new EnumMap<>(Material.class);
+        // —— 為「附魔金蘋果」定義三種數量 [1、2]，對應機率分別為 [95%、5%]
+        hellMap.put(Material.ENCHANTED_GOLDEN_APPLE,
+                buildDistribution(new int[]{1, 2}, new double[]{95, 5}));
+        // —— 為「下界合金」定義一種數量 [2]，對應機率為 1%
+        hellMap.put(Material.NETHERITE_INGOT,
+                buildDistribution(new int[]{2, 0}, new double[]{1, 99}));
+        // … 若要擴充地獄難度的其他道具分佈，可繼續新增 put()
+        // 將地獄難度配置放入總分佈表中
+        DISTRIBUTIONS.put(VoidTrialChambersPlugin.TrialDifficulty.HELL, hellMap);
+
+        // ================================================
+        // 2. 初始化「吞夢噬念（JUDGMENT）難度」的機率分佈表
+        // ================================================
+        Map<Material, List<ChanceEntry>> judgMap = new EnumMap<>(Material.class);
+        // —— 為「附魔金蘋果」定義三種數量 [1、2、4]，對應機率分別為 [10%、40%、50%]
+        judgMap.put(Material.ENCHANTED_GOLDEN_APPLE,
+                buildDistribution(new int[]{1, 2, 4}, new double[]{10, 40, 50}));
+        // —— 為「下界合金」定義三種數量 [1、2、3]，對應機率分別為 [30%、50%、20%]
+        judgMap.put(Material.NETHERITE_INGOT,
+                buildDistribution(new int[]{1, 2, 3}, new double[]{30, 50, 20}));
+        // … 若要擴充吞夢噬念難度的其他道具分佈，可繼續新增 put()
+        // 將吞夢噬念難度配置放入總分佈表中
+        DISTRIBUTIONS.put(VoidTrialChambersPlugin.TrialDifficulty.JUDGMENT, judgMap);
+    }
+
     private final VoidTrialChambersPlugin plugin;
+    private final Random random = new Random();
 
     public ChestRewardManager(VoidTrialChambersPlugin plugin) {
         this.plugin = plugin;
     }
 
     /**
-     * 根據難度，在玩家身旁放置對應獎勵的寶箱。
+     * 建立「數量 → 權重(%)」分佈的累積權重列表。
      *
-     * @param player 要給予獎勵的玩家
-     * @param diff   試煉難度（HELL / JUDGMENT）
+     * @param counts     各選項的數量
+     * @param weightsPct 權重百分比，長度須與 counts 相同
+     * @return 排序後的累積清單
+     */
+    private static List<ChanceEntry> buildDistribution(int[] counts, double[] weightsPct) {
+        int n = counts.length;
+        List<ChanceEntry> list = new ArrayList<>(n);
+        double cum = 0D;
+        for (int i = 0; i < n; i++) {
+            cum += weightsPct[i];
+            list.add(new ChanceEntry(counts[i], cum));
+        }
+        return Collections.unmodifiableList(list);
+    }
+
+    /**
+     * 放置寶箱並填入獎勵，5 分鐘後自動清除。
      */
     public void giveRewardChestBeside(Player player, VoidTrialChambersPlugin.TrialDifficulty diff) {
         UUID playerId = player.getUniqueId();
-        // 每日最多 5 次領取
         if (!plugin.canClaim(playerId)) {
             player.sendMessage("§c您今天的獎勵次數已達上限 (5 次)，請明日再領取。");
             return;
         }
 
-        // 計算放箱子位置（與原本相同）
-        Location eyeLoc = player.getEyeLocation();
-        Vector dir = eyeLoc.getDirection().setY(0).normalize();
-        double dx = dir.getZ(), dz = -dir.getX();
-        final Location chestLoc = player.getLocation().clone().add(dx, 0, dz);
+        // 算出玩家腳旁的位置 (跟玩家面向垂直)
+        Location eye = player.getEyeLocation();
+        Vector dir = eye.getDirection().setY(0).normalize();
+        final Location chestLoc = player.getLocation().clone()
+                .add(dir.getZ(), 0, -dir.getX());
 
-        Block initialBlock = chestLoc.getBlock();
-        if (initialBlock.getType() != Material.AIR) {
-            initialBlock.breakNaturally();
+        // 確保該格為空氣，否則破壞後再檢查
+        Block block = chestLoc.getBlock();
+        if (block.getType() != Material.AIR) {
+            block.breakNaturally();
         }
-        if (initialBlock.getType() != Material.AIR) {
+        if (block.getType() != Material.AIR) {
             player.sendMessage("§c無法在身旁生成寶箱：該格被阻擋。");
             return;
         }
 
-        initialBlock.setType(Material.CHEST);
-        if (!(initialBlock.getState() instanceof Chest chest)) {
-            player.sendMessage("§c身旁放置寶箱失敗。");
+        // 放置箱子
+        block.setType(Material.CHEST);
+        if (!(block.getState() instanceof Chest chest)) {
+            player.sendMessage("§c放置寶箱失敗。");
             return;
         }
+        Inventory inv = chest.getInventory();
 
-        // 根據難度選擇不同獎勵清單
-        List<ItemStack> rewards = new ArrayList<>();
+        // 固定獎勵：依難度選定數量
         if (diff == VoidTrialChambersPlugin.TrialDifficulty.HELL) {
-            // 地獄 難度的標準獎勵
-            rewards.add(new ItemStack(Material.DIAMOND, 3));
-            rewards.add(new ItemStack(Material.GOLD_INGOT, 5));
-            rewards.add(new ItemStack(Material.ENCHANTED_GOLDEN_APPLE, 1));
-            rewards.add(new ItemStack(Material.TOTEM_OF_UNDYING, 1));
-            rewards.add(new ItemStack(Material.EXPERIENCE_BOTTLE, 32));
-            rewards.add(new ItemStack(Material.EMERALD, 16));
+            inv.addItem(
+                    new ItemStack(Material.DIAMOND, 3),
+                    new ItemStack(Material.EXPERIENCE_BOTTLE, 32),
+                    new ItemStack(Material.GOLD_INGOT, 5),
+                    new ItemStack(Material.TOTEM_OF_UNDYING, 1),
+                    new ItemStack(Material.EMERALD, 16)
+
+            );
         } else {
-            // 吞夢噬念 難度更高的獎勵
-            rewards.add(new ItemStack(Material.DIAMOND, 5));
-            rewards.add(new ItemStack(Material.NETHERITE_INGOT, 2));
-            rewards.add(new ItemStack(Material.ENCHANTED_GOLDEN_APPLE, 2));
-            rewards.add(new ItemStack(Material.TOTEM_OF_UNDYING, 2));
-            rewards.add(new ItemStack(Material.EXPERIENCE_BOTTLE, 64));
-            rewards.add(new ItemStack(Material.EMERALD, 32));
+            inv.addItem(
+                    new ItemStack(Material.DIAMOND, 5),
+                    new ItemStack(Material.EXPERIENCE_BOTTLE, 64),
+                    new ItemStack(Material.TOTEM_OF_UNDYING, 8),
+                    new ItemStack(Material.EMERALD, 32)
+            );
         }
 
-        // 填入寶箱
-        Inventory inv = chest.getInventory();
-        inv.addItem(rewards.toArray(new ItemStack[0]));
-        player.sendMessage("§a已在您腳旁生成 " +
-                (diff == VoidTrialChambersPlugin.TrialDifficulty.HELL ? "【地獄難度】" : "【吞夢噬念難度】") +
-                " 寶箱獎勵，請盡快領取！");
+        // 機率獎勵：使用靜態 DISTRIBUTIONS，依難度、依道具 抽取數量
+        Map<Material, List<ChanceEntry>> distMap = DISTRIBUTIONS.get(diff);
+        for (Map.Entry<Material, List<ChanceEntry>> entry : distMap.entrySet()) {
+            int count = pickCount(entry.getValue());
+            if (count > 0) {
+                inv.addItem(new ItemStack(entry.getKey(), count));
+            }
+        }
+
+        player.sendMessage("§a已在您腳旁生成【" +
+                (diff == VoidTrialChambersPlugin.TrialDifficulty.HELL ? "地獄" : "吞夢噬念") +
+                "難度】寶箱獎勵，請盡快領取！");
         plugin.recordClaim(playerId);
 
         // 5 分鐘後自動移除
@@ -91,16 +152,13 @@ public class ChestRewardManager {
             @Override
             public void run() {
                 try {
-                    World world = chestLoc.getWorld();
-                    // 先確認該世界仍在伺服器已載入清單中，若已卸載則中止
-                    if (Bukkit.getServer().getWorlds().stream().noneMatch(w -> w.getUID().equals(world.getUID()))) {
+                    World w = chestLoc.getWorld();
+                    if (w == null) return;
+                    // 若世界或區塊已卸載，跳過
+                    if (Bukkit.getWorlds().stream().noneMatch(ww -> ww.getUID().equals(w.getUID())))
                         return;
-                    }
-                    int chunkX = chestLoc.getBlockX() >> 4;
-                    int chunkZ = chestLoc.getBlockZ() >> 4;
-                    if (!world.isChunkLoaded(chunkX, chunkZ)) {
-                        return;
-                    }
+                    int cx = chestLoc.getBlockX() >> 4, cz = chestLoc.getBlockZ() >> 4;
+                    if (!w.isChunkLoaded(cx, cz)) return;
 
                     Block b = chestLoc.getBlock();
                     if (b.getType() == Material.CHEST) {
@@ -111,5 +169,26 @@ public class ChestRewardManager {
                 }
             }
         }.runTaskLater(plugin, 5 * 60 * 20L);
+    }
+
+    /**
+     * 根據單一道具的累積機率分佈清單抽出要給的數量。
+     */
+    private int pickCount(List<ChanceEntry> entries) {
+        double total = entries.getLast().cumulativeWeight;
+        double r = random.nextDouble() * total;
+        // 二分搜尋或線性搜尋都可，列表通常很短，故用線性最快
+        for (ChanceEntry e : entries) {
+            if (r < e.cumulativeWeight) {
+                return e.count;
+            }
+        }
+        return 0;
+    }
+
+    /**
+     * 單項機率分佈 Entry，保存給定 count 與其對應的累積權重。
+     */
+    private record ChanceEntry(int count, double cumulativeWeight) {
     }
 }

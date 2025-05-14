@@ -78,6 +78,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
         dailyRecordFile = new File(getDataFolder(), "daily_records.yml");
         dailyRecordConfig = YamlConfiguration.loadConfiguration(dailyRecordFile);
         loadUserDailyRecords();
+        resetExpiredDailyRecords();
         LeaderboardCommand lbCmd = new LeaderboardCommand(leaderboardManager);
         getServer().getPluginManager().registerEvents(new WardenTargetFilter(), this);
         Bukkit.getPluginManager().registerEvents(new SignPlaceListener(), this);
@@ -125,17 +126,40 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
 
         getLogger().info("Void Trial Chambers Plugin 已停用");
     }
-
+    /**
+     * 如果記錄的日期不是今天，則重置為今天並將 count 歸零，統一儲存一次。
+     */
+    private void resetExpiredDailyRecords() {
+        LocalDate today = LocalDate.now(ZoneOffset.ofHours(8));
+        boolean changed = false;
+        for (Map.Entry<UUID, UserDailyRecord> e : dailyRecords.entrySet()) {
+            UserDailyRecord rec = e.getValue();
+            if (rec.getDate() == null || !today.equals(rec.getDate())) {
+                rec.setDate(today);
+                rec.setCount(0);
+                changed = true;
+            }
+        }
+        if (changed) {
+            saveUserDailyRecords();
+        }
+    }
     /**
      * 檢查玩家今天是否還能領取。
      */
     public boolean canClaim(UUID playerId) {
         LocalDate today = LocalDate.now(ZoneOffset.ofHours(8));
         UserDailyRecord rec = dailyRecords.get(playerId);
-        if (rec == null || !today.equals(rec.getDate())) {
-            return true;
+
+        if (rec != null && !today.equals(rec.getDate())) {
+            // lazy reset：跨日才更新日期+歸零，並儲存
+            rec.setDate(today);
+            rec.setCount(0);
+            saveUserDailyRecords();
         }
-        return rec.getCount() < 5;// 每日最多 5 次領取
+
+        // 無記錄或今日領取次數 < 5 才能領
+        return rec == null || rec.getCount() < 5;
     }
 
     /**
@@ -151,7 +175,6 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
                 return v;
             }
         });
-        // 立刻儲存
         saveUserDailyRecords();
     }
 
