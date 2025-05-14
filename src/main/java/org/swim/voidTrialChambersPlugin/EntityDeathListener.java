@@ -71,7 +71,7 @@ public class EntityDeathListener implements Listener {
 
         // 檢查是否達到完成條件 500/300
         int finishCount = diff == VoidTrialChambersPlugin.TrialDifficulty.JUDGMENT
-                ? 500 : 2;
+                ? 500 : 300;
         if (count >= finishCount) {
             long start = plugin.worldStartTimes.getOrDefault(name, System.currentTimeMillis());
             long elapsedMs = System.currentTimeMillis() - start;
