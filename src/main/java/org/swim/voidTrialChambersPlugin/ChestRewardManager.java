@@ -129,7 +129,7 @@ public class ChestRewardManager {
                     new ItemStack(Material.DIAMOND, 5),
                     new ItemStack(Material.EXPERIENCE_BOTTLE, 64),
                     new ItemStack(Material.TOTEM_OF_UNDYING, 8),
-                    new ItemStack(Material.EMERALD, 32)
+                    new ItemStack(Material.EMERALD, 64)
             );
         }
 
