@@ -30,9 +30,9 @@ public class ChestRewardManager {
         // 1. 初始化「地獄難度」的機率分佈表
         // ================================================
         Map<Material, List<ChanceEntry>> hellMap = new EnumMap<>(Material.class);
-        // —— 為「附魔金蘋果」定義三種數量 [1、2]，對應機率分別為 [95%、5%]
+        // —— 為「附魔金蘋果」定義三種數量 [1、2、4]，對應機率分別為 [95%、4%、1%]
         hellMap.put(Material.ENCHANTED_GOLDEN_APPLE,
-                buildDistribution(new int[]{1, 2}, new double[]{95, 5}));
+                buildDistribution(new int[]{1, 2, 4}, new double[]{95, 4, 1}));
         // —— 為「下界合金」定義一種數量 [2]，對應機率為 1%
         hellMap.put(Material.NETHERITE_INGOT,
                 buildDistribution(new int[]{2, 0}, new double[]{1, 99}));

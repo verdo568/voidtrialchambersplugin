@@ -126,6 +126,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
 
         getLogger().info("Void Trial Chambers Plugin 已停用");
     }
+
     /**
      * 如果記錄的日期不是今天，則重置為今天並將 count 歸零，統一儲存一次。
      */
@@ -144,6 +145,7 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             saveUserDailyRecords();
         }
     }
+
     /**
      * 檢查玩家今天是否還能領取。
      */
@@ -596,11 +598,11 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
             // 決定本波需產生多少怪物
             int desired;
             if (diff == TrialDifficulty.HELL) {
-                desired = rnd.nextInt(5) + 8; // 8–12
+                desired = rnd.nextInt(5) + 8; // 8–12 地獄
             } else if (diff == TrialDifficulty.JUDGMENT) {
-                desired = rnd.nextInt(10) + 15; // 15–24
+                desired = rnd.nextInt(10) + 15; // 15–24 吞夢
             } else {
-                desired = rnd.nextInt(3) + 4;  // 4–6
+                desired = rnd.nextInt(2) + 2;  // 2–3 普通
             }
             int toSpawn = Math.min(desired, MAX_ACTIVE_MOBS - (int) current);
 
