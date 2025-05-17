@@ -236,7 +236,7 @@ public class TrialChambersCommand implements CommandExecutor, TabCompleter {
             Location orig = plugin.originalLocations.remove(p.getUniqueId());
             if (orig != null) {
                 p.teleport(orig);
-                p.sendMessage("§6未找到床，已傳送回原始位置");
+                p.sendMessage("§6你伺服器太爛了，因此未生成結構，無法找到床，已傳送回原始位置");
             }
         }
     }
