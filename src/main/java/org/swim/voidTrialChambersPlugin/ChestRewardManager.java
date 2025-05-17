@@ -36,6 +36,30 @@ public class ChestRewardManager {
         // —— 為「下界合金」定義一種數量 [2]，對應機率為 1%
         hellMap.put(Material.NETHERITE_INGOT,
                 buildDistribution(new int[]{2, 0}, new double[]{1, 99}));
+        // —— 為「鐵錠」定義一種數量 [9]，對應機率為 20%
+        hellMap.put(Material.IRON_INGOT,
+                buildDistribution(new int[]{9, 0}, new double[]{20, 80}));
+        // —— 為「地獄石英」定義一種數量 [9]，對應機率為 20%
+        hellMap.put(Material.QUARTZ,
+                buildDistribution(new int[]{9, 0}, new double[]{20, 80}));
+        // —— 為「鞍」定義一種數量 [1]，對應機率為 67%
+        hellMap.put(Material.SADDLE,
+                buildDistribution(new int[]{1, 0}, new double[]{67, 33}));
+        // —— 為「腐肉」定義一種數量 [8]，對應機率為 80%
+        hellMap.put(Material.ROTTEN_FLESH,
+                buildDistribution(new int[]{8, 0}, new double[]{80, 20}));
+        // —— 為「火藥」定義一種數量 [5]，對應機率為 57%
+        hellMap.put(Material.GUNPOWDER,
+                buildDistribution(new int[]{5, 0}, new double[]{57, 43}));
+        // —— 為「骨頭」定義一種數量 [3]，對應機率為 50%
+        hellMap.put(Material.BONE,
+                buildDistribution(new int[]{3, 0}, new double[]{50, 50}));
+        // —— 為「泥土」定義一種數量 [7]，對應機率為 67%
+        hellMap.put(Material.DIRT,
+                buildDistribution(new int[]{7, 0}, new double[]{67, 33}));
+        // —— 為「烈焰桿」定義一種數量 [3]，對應機率為 50%
+        hellMap.put(Material.BLAZE_ROD,
+                buildDistribution(new int[]{3, 0}, new double[]{50, 50}));
         // … 若要擴充地獄難度的其他道具分佈，可繼續新增 put()
         // 將地獄難度配置放入總分佈表中
         DISTRIBUTIONS.put(VoidTrialChambersPlugin.TrialDifficulty.HELL, hellMap);
@@ -50,6 +74,15 @@ public class ChestRewardManager {
         // —— 為「下界合金」定義三種數量 [1、2、3]，對應機率分別為 [30%、50%、20%]
         judgMap.put(Material.NETHERITE_INGOT,
                 buildDistribution(new int[]{1, 2, 3}, new double[]{30, 50, 20}));
+        // —— 為「鐵錠」定義一種數量 [9]，對應機率為 20%
+        judgMap.put(Material.IRON_INGOT,
+                buildDistribution(new int[]{9, 0}, new double[]{20, 80}));
+        // —— 為「地獄石英」定義一種數量 [9]，對應機率為 20%
+        judgMap.put(Material.QUARTZ,
+                buildDistribution(new int[]{9, 0}, new double[]{20, 80}));
+        // —— 為「鞍」定義一種數量 [1]，對應機率為 5%
+        judgMap.put(Material.SADDLE,
+                buildDistribution(new int[]{1, 0}, new double[]{5, 95}));
         // … 若要擴充吞夢噬念難度的其他道具分佈，可繼續新增 put()
         // 將吞夢噬念難度配置放入總分佈表中
         DISTRIBUTIONS.put(VoidTrialChambersPlugin.TrialDifficulty.JUDGMENT, judgMap);
