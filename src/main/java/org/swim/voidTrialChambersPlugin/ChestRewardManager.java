@@ -1,15 +1,12 @@
 package org.swim.voidTrialChambersPlugin;
 
-import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
-import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.Chest;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.util.Vector;
 
 import java.util.*;
@@ -21,13 +18,14 @@ import java.util.concurrent.ThreadLocalRandom;
  */
 public class ChestRewardManager {
 
-    private final VoidTrialChambersPlugin plugin;
-
-    /** 靜態：各難度的「機率獎勵」分佈表；Material → RewardDistribution */
+    /**
+     * 靜態：各難度的「機率獎勵」分佈表；Material → RewardDistribution
+     */
     private static final Map<VoidTrialChambersPlugin.TrialDifficulty,
             Map<Material, RewardDistribution>> DISTRIBUTIONS;
-
-    /** 靜態：各難度的「固定獎勵」清單 */
+    /**
+     * 靜態：各難度的「固定獎勵」清單
+     */
     private static final Map<VoidTrialChambersPlugin.TrialDifficulty, List<ItemStack>> FIXED_REWARDS;
 
     static {
@@ -57,12 +55,88 @@ public class ChestRewardManager {
         FIXED_REWARDS = Collections.unmodifiableMap(fixed);
     }
 
+    private final VoidTrialChambersPlugin plugin;
+
     /**
      * 建構子
+     *
      * @param plugin 主插件實例，提供權限與記錄玩家領取次數功能
      */
     public ChestRewardManager(VoidTrialChambersPlugin plugin) {
         this.plugin = plugin;
+    }
+
+    /**
+     * 建構「HELL 地獄難度」的分佈表
+     */
+    private static Map<Material, RewardDistribution> buildHellDistributions() {
+        return Map.ofEntries(
+                // —— 為「附魔金蘋果」定義三種數量 [1、2、4]，對應機率分別為 [95%、4%、1%]
+                distEntry(Material.ENCHANTED_GOLDEN_APPLE, new int[]{1, 2, 4}, new double[]{95, 4, 1}),
+                // —— 為「下界合金」定義一種數量 [2]，對應機率為 1%
+                distEntry(Material.NETHERITE_INGOT, new int[]{2, 0}, new double[]{1, 99}),
+                // —— 為「鐵錠」定義一種數量 [9]，對應機率為 20%
+                distEntry(Material.IRON_INGOT, new int[]{9, 0}, new double[]{20, 80}),
+                // —— 為「鞍」定義一種數量 [1]，對應機率為 67%
+                distEntry(Material.SADDLE, new int[]{1, 0}, new double[]{67, 33}),
+                // —— 為「骨頭」定義一種數量 [3]，對應機率為 50%
+                distEntry(Material.BONE, new int[]{3, 0}, new double[]{50, 50}),
+                // —— 為「泥土」定義一種數量 [7]，對應機率為 67%
+                distEntry(Material.DIRT, new int[]{7, 0}, new double[]{67, 33}),
+                // —— 為「烈焰桿」定義一種數量 [3]，對應機率為 50%
+                distEntry(Material.BLAZE_ROD, new int[]{3, 0}, new double[]{50, 50}),
+                //「火藥 5–8」範圍分佈 (73% 給予 5–8)
+                distRangeEntry(Material.GUNPOWDER, 5, 8),
+                //「腐肉 6–8」範圍分佈 (73% 給予 6–8)
+                distRangeEntry(Material.ROTTEN_FLESH, 6, 8),
+                //「地獄石英 8–16」範圍分佈 (73% 給予 8–16)
+                distRangeEntry(Material.QUARTZ, 8, 16)
+        );
+    }
+
+    /**
+     * 建構「JUDGMENT 吞夢噬念難度」的分佈表
+     */
+    private static Map<Material, RewardDistribution> buildJudgDistributions() {
+        return Map.ofEntries(
+                distEntry(Material.ENCHANTED_GOLDEN_APPLE, new int[]{1, 2, 4}, new double[]{10, 40, 50}),
+                distEntry(Material.NETHERITE_INGOT, new int[]{1, 2, 3}, new double[]{30, 50, 20}),
+                distEntry(Material.IRON_INGOT, new int[]{9, 0}, new double[]{20, 80}),
+                distEntry(Material.QUARTZ, new int[]{9, 0}, new double[]{20, 80}),
+                distEntry(Material.SADDLE, new int[]{1, 0}, new double[]{5, 95})
+        );
+    }
+
+    // ----------------------------------
+    // 以下為靜態方法：建構各難度的「機率分佈表」
+    // ----------------------------------
+
+    /**
+     * 建立固定選項分佈的輔助方法
+     *
+     * @param m      道具材質
+     * @param counts 各選項數量陣列
+     * @param w      與 counts 對應的百分比權重陣列
+     * @return Map 條目，key=Material, value=RewardDistribution
+     */
+    private static Map.Entry<Material, RewardDistribution> distEntry(
+            Material m, int[] counts, double[] w) {
+        return Map.entry(m, RewardDistribution.of(counts, w));
+    }
+
+    /**
+     * 建立「範圍分佈」的輔助方法：
+     * weights[0]：給予 range 的機率 (pctGive)
+     * weights[1]：給予 0 的機率 (pctNone)
+     *
+     * @param m   道具材質
+     * @param min 最小隨機數量
+     * @param max 最大隨機數量
+     * @return Map 條目
+     */
+    private static Map.Entry<Material, RewardDistribution> distRangeEntry(
+            Material m, int min, int max) {
+        return Map.entry(m, RewardDistribution.ofRange(min, max, new double[]{(double) 73, (double) 27}));
     }
 
     /**
@@ -128,75 +202,6 @@ public class ChestRewardManager {
     }
 
     // ----------------------------------
-    // 以下為靜態方法：建構各難度的「機率分佈表」
-    // ----------------------------------
-
-    /** 建構「HELL 地獄難度」的分佈表 */
-    private static Map<Material, RewardDistribution> buildHellDistributions() {
-        return Map.ofEntries(
-                // —— 為「附魔金蘋果」定義三種數量 [1、2、4]，對應機率分別為 [95%、4%、1%]
-                distEntry(Material.ENCHANTED_GOLDEN_APPLE, new int[]{1,2,4}, new double[]{95,4,1}),
-                // —— 為「下界合金」定義一種數量 [2]，對應機率為 1%
-                distEntry(Material.NETHERITE_INGOT,      new int[]{2,0}, new double[]{1,99}),
-                // —— 為「鐵錠」定義一種數量 [9]，對應機率為 20%
-                distEntry(Material.IRON_INGOT,          new int[]{9,0}, new double[]{20,80}),
-                // —— 為「鞍」定義一種數量 [1]，對應機率為 67%
-                distEntry(Material.SADDLE,              new int[]{1,0}, new double[]{67,33}),
-                // —— 為「骨頭」定義一種數量 [3]，對應機率為 50%
-                distEntry(Material.BONE,                new int[]{3,0}, new double[]{50,50}),
-                // —— 為「泥土」定義一種數量 [7]，對應機率為 67%
-                distEntry(Material.DIRT,                new int[]{7,0}, new double[]{67,33}),
-                // —— 為「烈焰桿」定義一種數量 [3]，對應機率為 50%
-                distEntry(Material.BLAZE_ROD,           new int[]{3,0}, new double[]{50,50}),
-                //「火藥 5–8」範圍分佈 (73% 給予 5–8)
-                distRangeEntry(Material.GUNPOWDER, 5, 8),
-                //「腐肉 6–8」範圍分佈 (73% 給予 6–8)
-                distRangeEntry(Material.ROTTEN_FLESH, 6, 8),
-                //「地獄石英 8–16」範圍分佈 (73% 給予 8–16)
-                distRangeEntry(Material.QUARTZ, 8, 16)
-        );
-    }
-
-    /** 建構「JUDGMENT 吞夢噬念難度」的分佈表 */
-    private static Map<Material, RewardDistribution> buildJudgDistributions() {
-        return Map.ofEntries(
-                distEntry(Material.ENCHANTED_GOLDEN_APPLE, new int[]{1,2,4}, new double[]{10,40,50}),
-                distEntry(Material.NETHERITE_INGOT,        new int[]{1,2,3}, new double[]{30,50,20}),
-                distEntry(Material.IRON_INGOT,            new int[]{9,0},   new double[]{20,80}),
-                distEntry(Material.QUARTZ,                new int[]{9,0},   new double[]{20,80}),
-                distEntry(Material.SADDLE,                new int[]{1,0},   new double[]{5,95})
-        );
-    }
-
-    /**
-     * 建立固定選項分佈的輔助方法
-     *
-     * @param m      道具材質
-     * @param counts 各選項數量陣列
-     * @param w      與 counts 對應的百分比權重陣列
-     * @return Map 條目，key=Material, value=RewardDistribution
-     */
-    private static Map.Entry<Material, RewardDistribution> distEntry(
-            Material m, int[] counts, double[] w) {
-        return Map.entry(m, RewardDistribution.of(counts, w));
-    }
-
-    /**
-     * 建立「範圍分佈」的輔助方法：
-     * weights[0]：給予 range 的機率 (pctGive)
-     * weights[1]：給予 0 的機率 (pctNone)
-     *
-     * @param m   道具材質
-     * @param min 最小隨機數量
-     * @param max 最大隨機數量
-     * @return Map 條目
-     */
-    private static Map.Entry<Material, RewardDistribution> distRangeEntry(
-            Material m, int min, int max) {
-        return Map.entry(m, RewardDistribution.ofRange(min, max, new double[]{(double) 73, (double) 27}));
-    }
-
-    // ----------------------------------
     // 內部類別：封裝「固定分佈」與「範圍分佈」抽樣邏輯
     // ----------------------------------
     private static class RewardDistribution {
@@ -206,9 +211,19 @@ public class ChestRewardManager {
         private final int rangeMin;        // 範圍最小值
         private final int rangeMax;        // 範圍最大值
 
+        private RewardDistribution(int[] counts, double[] cumWeights,
+                                   boolean isRange, int min, int max) {
+            this.counts = counts;
+            this.cumWeights = cumWeights;
+            this.isRange = isRange;
+            this.rangeMin = min;
+            this.rangeMax = max;
+        }
+
         /**
          * 建立「固定選項」分佈
-         * @param counts    各選項數量
+         *
+         * @param counts     各選項數量
          * @param weightsPct 與 counts 對應的百分比權重
          * @return RewardDistribution 實例
          */
@@ -225,6 +240,7 @@ public class ChestRewardManager {
 
         /**
          * 建立「範圍」分佈
+         *
          * @param min     範圍最小值
          * @param max     範圍最大值
          * @param weights weights[0]=range% , weights[1]=none%
@@ -240,15 +256,6 @@ public class ChestRewardManager {
             cum += weights[1];
             cw[1] = cum;
             return new RewardDistribution(cnts, cw, true, min, max);
-        }
-
-        private RewardDistribution(int[] counts, double[] cumWeights,
-                                   boolean isRange, int min, int max) {
-            this.counts = counts;
-            this.cumWeights = cumWeights;
-            this.isRange = isRange;
-            this.rangeMin = min;
-            this.rangeMax = max;
         }
 
         /**
