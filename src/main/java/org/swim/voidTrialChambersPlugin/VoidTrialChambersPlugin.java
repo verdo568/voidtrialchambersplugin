@@ -64,6 +64,8 @@ public class VoidTrialChambersPlugin extends JavaPlugin implements Listener {
     public void onEnable() {
         // 註冊事件監聽
         Bukkit.getPluginManager().registerEvents(this, this);
+
+        getServer().getPluginManager().registerEvents(new TrialWorldProtectionListener(), this);
         // 啟動怪物定期清理任務
         MonsterCleaner.startCleaningTask(this);
         // 設定指令與 Tab 補全
