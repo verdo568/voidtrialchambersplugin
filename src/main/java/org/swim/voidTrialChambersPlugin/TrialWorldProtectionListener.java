@@ -29,18 +29,6 @@ public class TrialWorldProtectionListener implements Listener {
         }
     }
 
-    // 禁止放置 TNT 方塊
-    @EventHandler
-    public void onBlockPlace(BlockPlaceEvent event) {
-        World world = event.getBlockPlaced().getWorld();
-        if (world.getName().startsWith("trial_")) {
-            Block block = event.getBlockPlaced();
-            if (block.getType() == org.bukkit.Material.TNT) {
-                event.setCancelled(true);
-            }
-        }
-    }
-
     // 防止 TNT 實體生成後的爆炸破壞方塊
     @EventHandler
     public void onEntityExplode(EntityExplodeEvent event) {
